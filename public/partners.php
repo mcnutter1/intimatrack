@@ -110,6 +110,65 @@ csrf_check();
 $uid = current_user()['id'];
 $action = $_GET['action'] ?? 'list';
 
+$partnerAggregateStmt = $db->prepare('SELECT 
+    p.id,
+    p.name,
+    COUNT(DISTINCT e.id) AS encounter_count,
+    COUNT(er.id) AS round_count,
+    AVG(er.satisfaction_rating) AS avg_round_satisfaction,
+    AVG(er.duration_minutes) AS avg_round_duration,
+    SUM(er.duration_minutes) AS total_round_duration,
+    AVG(e.physical_intensity) AS avg_physical,
+    AVG(e.emotional_intensity) AS avg_emotional,
+    AVG(e.overall_rating) AS avg_overall
+  FROM partners p
+  LEFT JOIN encounter_participants ep ON ep.partner_id = p.id
+  LEFT JOIN encounters e ON e.id = ep.encounter_id AND e.user_id = p.user_id
+  LEFT JOIN encounter_rounds er ON er.participant_id = ep.id
+  WHERE p.user_id = ?
+  GROUP BY p.id, p.name');
+$partnerAggregateStmt->execute([$uid]);
+$partnerMetricRows = $partnerAggregateStmt->fetchAll(PDO::FETCH_ASSOC);
+
+$partnerMetrics = [];
+$partnerScoreList = [];
+foreach ($partnerMetricRows as $row) {
+  $partnerId = (int)$row['id'];
+  $roundCount = (int)($row['round_count'] ?? 0);
+  $avgSat = $row['avg_round_satisfaction'] !== null ? (float)$row['avg_round_satisfaction'] : null;
+  $avgOverall = $row['avg_overall'] !== null ? (float)$row['avg_overall'] : null;
+  $avgDuration = $row['avg_round_duration'] !== null ? (float)$row['avg_round_duration'] : null;
+  $encount = (int)($row['encounter_count'] ?? 0);
+
+  $satComponent = $avgSat !== null ? $avgSat / 10 : 0.5;
+  $overallComponent = $avgOverall !== null ? $avgOverall / 5 : 0.5;
+  $volumeComponent = $roundCount > 0 ? min($roundCount, 20) / 20 : 0;
+  $durationComponent = $avgDuration !== null ? min($avgDuration, 120) / 120 : 0.5;
+  $score = round(($satComponent * 0.45 + $overallComponent * 0.25 + $volumeComponent * 0.2 + $durationComponent * 0.1) * 100, 1);
+
+  $metrics = [
+    'id' => $partnerId,
+    'name' => $row['name'],
+    'encounter_count' => $encount,
+    'round_count' => $roundCount,
+    'avg_round_satisfaction' => $avgSat,
+    'avg_round_duration' => $avgDuration,
+    'total_round_duration' => $row['total_round_duration'] !== null ? (float)$row['total_round_duration'] : 0,
+    'avg_physical' => $row['avg_physical'] !== null ? (float)$row['avg_physical'] : null,
+    'avg_emotional' => $row['avg_emotional'] !== null ? (float)$row['avg_emotional'] : null,
+    'avg_overall' => $row['avg_overall'] !== null ? (float)$row['avg_overall'] : null,
+    'score' => $score
+  ];
+  $partnerMetrics[$partnerId] = $metrics;
+  $partnerScoreList[] = $metrics;
+}
+
+usort($partnerScoreList, fn($a,$b) => $b['score'] <=> $a['score']);
+foreach ($partnerScoreList as $index => $metrics) {
+  $rank = $index + 1;
+  $partnerMetrics[$metrics['id']]['rank'] = $rank;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $id = (int)($_POST['id'] ?? 0);
 
@@ -453,6 +512,7 @@ if ($action === 'new' || ($action === 'edit' && isset($_GET['id']))) {
     $photos = $photoStmt->fetchAll();
     $circumcisedLabel = $partner['circumcised'] === null ? 'Unknown' : ($partner['circumcised'] ? 'Yes' : 'No');
     $raceLabel = $partner['race'] ? ($raceOptions[$partner['race']] ?? $partner['race']) : '—';
+    $partnerStats = $partnerMetrics[$partnerId] ?? null;
 ?>
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h2 class="h5 m-0">Partner profile</h2>
@@ -464,6 +524,22 @@ if ($action === 'new' || ($action === 'edit' && isset($_GET['id']))) {
 <div class="card p-4 mb-4">
   <h3 class="h5 mb-3"><?= h($partner['name']) ?></h3>
   <dl class="row small mb-0">
+    <?php if ($partnerStats): ?>
+      <dt class="col-sm-4">Rank</dt>
+      <dd class="col-sm-8">#<?= (int)($partnerStats['rank'] ?? 0) ?> (score <?= number_format((float)$partnerStats['score'], 1) ?>)</dd>
+      <dt class="col-sm-4">Rounds tracked</dt>
+      <dd class="col-sm-8"><?= (int)$partnerStats['round_count'] ?> • Encounters <?= (int)$partnerStats['encounter_count'] ?></dd>
+      <dt class="col-sm-4">Avg satisfaction</dt>
+      <dd class="col-sm-8"><?= $partnerStats['avg_round_satisfaction'] !== null ? number_format((float)$partnerStats['avg_round_satisfaction'], 1) . '/10' : '—' ?></dd>
+      <dt class="col-sm-4">Avg session duration</dt>
+      <dd class="col-sm-8"><?= $partnerStats['avg_round_duration'] !== null ? number_format((float)$partnerStats['avg_round_duration'], 1) . ' min' : '—' ?> (total <?= (int)$partnerStats['total_round_duration'] ?> min)</dd>
+      <dt class="col-sm-4">Avg intensity</dt>
+      <dd class="col-sm-8">
+        Physical <?= $partnerStats['avg_physical'] !== null ? number_format((float)$partnerStats['avg_physical'], 1) : '—' ?> /
+        Emotional <?= $partnerStats['avg_emotional'] !== null ? number_format((float)$partnerStats['avg_emotional'], 1) : '—' ?> /
+        Overall <?= $partnerStats['avg_overall'] !== null ? number_format((float)$partnerStats['avg_overall'], 1) : '—' ?>
+      </dd>
+    <?php endif; ?>
     <dt class="col-sm-4">Relationship</dt>
     <dd class="col-sm-8"><?= h($relationshipOptions[$partner['relationship_context']] ?? ucfirst(str_replace('_', ' ', $partner['relationship_context']))) ?><?php if ($partner['relationship_details']): ?> <span class="text-muted">(<?= h($partner['relationship_details']) ?>)</span><?php endif; ?></dd>
     <dt class="col-sm-4">Build</dt>
@@ -520,22 +596,56 @@ if ($action === 'new' || ($action === 'edit' && isset($_GET['id']))) {
   }
 } else {
   $rows = $db->query("SELECT * FROM partners WHERE user_id = $uid ORDER BY name ASC")->fetchAll();
+  $topRanked = array_slice($partnerScoreList, 0, 3);
 ?>
 <div class="d-flex justify-content-between align-items-center mb-2">
   <h2 class="h5 m-0">Partners</h2>
   <a class="btn btn-sm btn-brand" href="partners.php?action=new">Add Partner</a>
 </div>
+<?php if ($topRanked): ?>
+<div class="card p-3 mb-3">
+  <h3 class="h6 mb-2">Top partners</h3>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead class="small-muted">
+        <tr>
+          <th>Rank</th>
+          <th>Partner</th>
+          <th class="text-end">Score</th>
+          <th class="text-end">Rounds</th>
+          <th class="text-end">Avg satisfaction</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php foreach ($topRanked as $row): ?>
+          <tr>
+            <td>#<?= (int)($partnerMetrics[$row['id']]['rank'] ?? 0) ?></td>
+            <td><?= h($row['name']) ?></td>
+            <td class="text-end fw-semibold"><?= number_format((float)$row['score'], 1) ?></td>
+            <td class="text-end"><?= (int)$row['round_count'] ?></td>
+            <td class="text-end"><?= $row['avg_round_satisfaction'] !== null ? number_format((float)$row['avg_round_satisfaction'], 1) . '/10' : '—' ?></td>
+          </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+<?php endif; ?>
 <div class="card p-0">
   <table class="table table-hover align-middle m-0">
-    <thead><tr><th>Name</th><th>Relationship</th><th>Penis size</th><th>Met at</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Relationship</th><th>Penis size</th><th class="text-end">Score</th><th class="text-end">Rounds</th><th class="text-end">Avg satisfaction</th><th>Met at</th><th></th></tr></thead>
     <tbody>
       <?php foreach ($rows as $r):
         $penisLabel = penis_size_label($r['penis_size_rating'] ?? null, $penisSizeOptions);
+        $metrics = $partnerMetrics[$r['id']] ?? null;
       ?>
         <tr>
           <td><?= h($r['name']) ?></td>
           <td><?= h($relationshipOptions[$r['relationship_context']] ?? ucfirst(str_replace('_',' ', $r['relationship_context']))) ?></td>
           <td><?= h($penisLabel) ?></td>
+          <td class="text-end fw-semibold"><?= $metrics ? number_format((float)$metrics['score'], 1) : '—' ?></td>
+          <td class="text-end"><?= $metrics ? (int)$metrics['round_count'] : 0 ?></td>
+          <td class="text-end"><?= $metrics && $metrics['avg_round_satisfaction'] !== null ? number_format((float)$metrics['avg_round_satisfaction'], 1) . '/10' : '—' ?></td>
           <td><?= $r['met_location'] ? h($r['met_location']) : '—' ?></td>
           <td class="text-end">
             <a class="btn btn-sm btn-outline-primary" href="partners.php?action=view&id=<?= (int)$r['id'] ?>">View</a>
