@@ -15,13 +15,30 @@ CREATE TABLE IF NOT EXISTS partners (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
   name VARCHAR(190) NOT NULL,
-  relationship_context VARCHAR(190) DEFAULT NULL,
+  relationship_context ENUM('spouse','long_term_partner','dating','casual','poly_partner','friend','other') DEFAULT 'other',
+  relationship_details VARCHAR(190) DEFAULT NULL,
   height_cm INT DEFAULT NULL,
   build ENUM('slim','average','athletic','curvy','plus','other') DEFAULT 'other',
+  overall_size_rating TINYINT UNSIGNED DEFAULT NULL, -- 1-10 subjective size rating
+  circumcised TINYINT(1) DEFAULT NULL, -- NULL = unknown, 1 = yes, 0 = no
+  race VARCHAR(100) DEFAULT NULL,
+  met_location VARCHAR(190) DEFAULT NULL,
+  first_met_notes VARCHAR(255) DEFAULT NULL,
   dimensions_note VARCHAR(255) DEFAULT NULL, -- optional non-explicit sizing note for health reference
   notes_enc TEXT DEFAULT NULL, -- encrypted notes (non-explicit)
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS partner_photos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  partner_id INT NOT NULL,
+  user_id INT NOT NULL,
+  mime_type VARCHAR(100) NOT NULL,
+  image_data LONGBLOB NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (partner_id) REFERENCES partners(id) ON DELETE CASCADE,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
