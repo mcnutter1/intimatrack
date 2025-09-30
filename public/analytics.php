@@ -74,7 +74,7 @@ $scenarioStatsStmt = $db->prepare('SELECT er.scenario, COUNT(*) AS rounds, AVG(e
 $scenarioStatsStmt->execute([$uid]);
 $scenarioStats = $scenarioStatsStmt->fetchAll();
 
-$partnerSatisfactionStmt = $db->prepare('SELECT p.name, COUNT(*) AS rounds, AVG(er.satisfaction_rating) AS avg_satisfaction, SUM(er.duration_minutes) AS total_duration
+$partnerSatisfactionStmt = $db->prepare('SELECT p.id, p.name, COUNT(*) AS rounds, AVG(er.satisfaction_rating) AS avg_satisfaction, SUM(er.duration_minutes) AS total_duration, AVG(er.duration_minutes) AS avg_duration
   FROM encounter_rounds er
   JOIN encounter_participants ep ON er.participant_id = ep.id
   JOIN encounters e ON ep.encounter_id = e.id
@@ -82,8 +82,7 @@ $partnerSatisfactionStmt = $db->prepare('SELECT p.name, COUNT(*) AS rounds, AVG(
   WHERE e.user_id = ?
   GROUP BY p.id, p.name
   HAVING rounds > 0
-  ORDER BY avg_satisfaction DESC
-  LIMIT 8');
+  ORDER BY avg_satisfaction DESC');
 $partnerSatisfactionStmt->execute([$uid]);
 $partnerSatisfaction = $partnerSatisfactionStmt->fetchAll();
 
@@ -109,6 +108,29 @@ $topScenarioKey = $scenarioStats[0]['scenario'] ?? null;
 $topScenarioLabel = $topScenarioKey ? ($scenarioLabels[$topScenarioKey] ?? ucwords(str_replace('_', ' ', $topScenarioKey))) : null;
 $participantClimaxRate = $climaxStats['participant_rate'] !== null ? round((float)$climaxStats['participant_rate'] * 100) : null;
 $partnerClimaxRate = $climaxStats['partner_rate'] !== null ? round((float)$climaxStats['partner_rate'] * 100) : null;
+
+$partnerHighlights = [
+  'topSatisfaction' => null,
+  'needsAttention' => null,
+  'longestDuration' => null
+];
+
+if ($partnerSatisfaction) {
+  $sortedBySatisfaction = array_values(array_filter($partnerSatisfaction, fn($row) => $row['avg_satisfaction'] !== null));
+  if ($sortedBySatisfaction) {
+    usort($sortedBySatisfaction, fn($a,$b) => $b['avg_satisfaction'] <=> $a['avg_satisfaction']);
+    $partnerHighlights['topSatisfaction'] = $sortedBySatisfaction[0];
+    if (count($sortedBySatisfaction) > 1) {
+      $partnerHighlights['needsAttention'] = $sortedBySatisfaction[array_key_last($sortedBySatisfaction)];
+    }
+  }
+
+  $sortedByDuration = array_values(array_filter($partnerSatisfaction, fn($row) => $row['avg_duration'] !== null));
+  if ($sortedByDuration) {
+    usort($sortedByDuration, fn($a,$b) => $b['avg_duration'] <=> $a['avg_duration']);
+    $partnerHighlights['longestDuration'] = $sortedByDuration[0];
+  }
+}
 
 // Aggregate stats
 $by_partner = $db->prepare("SELECT p.name, COUNT(*) c, AVG(e.physical_intensity) pavg, AVG(e.emotional_intensity) eavg, AVG(e.overall_rating) ravg
@@ -165,6 +187,53 @@ $freq = $freq_by_day->fetchAll();
   </div>
 </div>
 
+<?php if (array_filter($partnerHighlights)): ?>
+<div class="row g-3 mb-3">
+  <div class="col-12 col-lg-4">
+    <div class="card p-3 h-100">
+      <div class="small-muted text-uppercase">Top partner (satisfaction)</div>
+      <?php if ($partnerHighlights['topSatisfaction']): ?>
+        <div class="h5 mb-1"><?= h($partnerHighlights['topSatisfaction']['name']) ?></div>
+        <div class="small-muted">Avg satisfaction: <?= number_format((float)$partnerHighlights['topSatisfaction']['avg_satisfaction'], 1) ?>/10 • Rounds <?= (int)$partnerHighlights['topSatisfaction']['rounds'] ?></div>
+        <?php if ($partnerHighlights['topSatisfaction']['avg_duration'] !== null): ?>
+          <div class="small-muted">Avg duration: <?= number_format((float)$partnerHighlights['topSatisfaction']['avg_duration'], 1) ?> min</div>
+        <?php endif; ?>
+      <?php else: ?>
+        <div class="small-muted">No round data yet.</div>
+      <?php endif; ?>
+    </div>
+  </div>
+  <div class="col-12 col-lg-4">
+    <div class="card p-3 h-100">
+      <div class="small-muted text-uppercase">Needs attention</div>
+      <?php if ($partnerHighlights['needsAttention']): ?>
+        <div class="h5 mb-1"><?= h($partnerHighlights['needsAttention']['name']) ?></div>
+        <div class="small-muted">Avg satisfaction: <?= number_format((float)$partnerHighlights['needsAttention']['avg_satisfaction'], 1) ?>/10 • Rounds <?= (int)$partnerHighlights['needsAttention']['rounds'] ?></div>
+        <?php if ($partnerHighlights['needsAttention']['avg_duration'] !== null): ?>
+          <div class="small-muted">Avg duration: <?= number_format((float)$partnerHighlights['needsAttention']['avg_duration'], 1) ?> min</div>
+        <?php endif; ?>
+      <?php else: ?>
+        <div class="small-muted">Not enough data yet.</div>
+      <?php endif; ?>
+    </div>
+  </div>
+  <div class="col-12 col-lg-4">
+    <div class="card p-3 h-100">
+      <div class="small-muted text-uppercase">Longest average duration</div>
+      <?php if ($partnerHighlights['longestDuration']): ?>
+        <div class="h5 mb-1"><?= h($partnerHighlights['longestDuration']['name']) ?></div>
+        <div class="small-muted">Avg duration: <?= number_format((float)$partnerHighlights['longestDuration']['avg_duration'], 1) ?> min • Rounds <?= (int)$partnerHighlights['longestDuration']['rounds'] ?></div>
+        <?php if ($partnerHighlights['longestDuration']['avg_satisfaction'] !== null): ?>
+          <div class="small-muted">Avg satisfaction: <?= number_format((float)$partnerHighlights['longestDuration']['avg_satisfaction'], 1) ?>/10</div>
+        <?php endif; ?>
+      <?php else: ?>
+        <div class="small-muted">Record more durations to populate this card.</div>
+      <?php endif; ?>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
+
 <div class="row g-3 mb-3">
   <div class="col-12 col-lg-6">
     <div class="card p-3 h-100">
@@ -210,6 +279,7 @@ $freq = $freq_by_day->fetchAll();
                 <th>Partner</th>
                 <th class="text-end">Rounds</th>
                 <th class="text-end">Avg satisfaction</th>
+                <th class="text-end">Avg duration</th>
                 <th class="text-end">Total duration</th>
               </tr>
             </thead>
@@ -219,6 +289,7 @@ $freq = $freq_by_day->fetchAll();
                   <td><?= h($row['name']) ?></td>
                   <td class="text-end"><?= (int)$row['rounds'] ?></td>
                   <td class="text-end"><?= $row['avg_satisfaction'] !== null ? number_format((float)$row['avg_satisfaction'], 1) . '/10' : '—' ?></td>
+                  <td class="text-end"><?= $row['avg_duration'] !== null ? number_format((float)$row['avg_duration'], 1) . ' min' : '—' ?></td>
                   <td class="text-end"><?= (int)$row['total_duration'] ?> min</td>
                 </tr>
               <?php endforeach; ?>
