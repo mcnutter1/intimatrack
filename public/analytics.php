@@ -56,6 +56,27 @@ $scenarioLabels = [
   'other' => 'Other scenario'
 ];
 
+$penisSizeLabels = [
+  'xs_under_4' => 'X-Small (≤ 4")',
+  'small_4_5' => 'Small (4" - 5")',
+  'average_5_6' => 'Average (5" - 6")',
+  'above_avg_6_7' => 'Above average (6" - 7")',
+  'large_7_8' => 'Large (7" - 8")',
+  'xl_over_8' => 'X-Large (≥ 8")'
+];
+
+$climaxLocationLabels = [
+  'vaginal_internal' => 'Vaginal (internal)',
+  'vaginal_external' => 'Vaginal (external)',
+  'anal_internal' => 'Anal (internal)',
+  'anal_external' => 'Anal (external)',
+  'oral' => 'Oral',
+  'facial' => 'Facial',
+  'breasts_chest' => 'Breasts / chest',
+  'stomach_thighs' => 'Stomach / thighs',
+  'other_location' => 'Other location'
+];
+
 $roundSummaryStmt = $db->prepare('SELECT COUNT(*) AS rounds, AVG(er.satisfaction_rating) AS avg_satisfaction, AVG(er.duration_minutes) AS avg_duration
   FROM encounter_rounds er
   JOIN encounter_participants ep ON er.participant_id = ep.id
@@ -114,6 +135,27 @@ $by_location = $byLocationStmt->fetchAll(PDO::FETCH_ASSOC);
 $freq_by_day = $db->prepare('SELECT DATE(occurred_at) AS d, COUNT(*) AS c FROM encounters WHERE user_id = ? GROUP BY d ORDER BY d ASC');
 $freq_by_day->execute([$uid]);
 $freq = $freq_by_day->fetchAll(PDO::FETCH_ASSOC);
+
+$satisfactionBySizeStmt = $db->prepare('SELECT p.penis_size_rating AS size, COUNT(*) AS rounds, AVG(er.satisfaction_rating) AS avg_satisfaction, AVG(er.duration_minutes) AS avg_duration
+  FROM encounter_rounds er
+  JOIN encounter_participants ep ON er.participant_id = ep.id
+  JOIN partners p ON p.id = ep.partner_id
+  JOIN encounters e ON ep.encounter_id = e.id
+  WHERE e.user_id = ? AND p.penis_size_rating IS NOT NULL
+  GROUP BY p.penis_size_rating
+  ORDER BY avg_satisfaction DESC');
+$satisfactionBySizeStmt->execute([$uid]);
+$satisfactionBySize = $satisfactionBySizeStmt->fetchAll(PDO::FETCH_ASSOC);
+
+$climaxLocationStmt = $db->prepare('SELECT er.partner_climax_location AS location, COUNT(*) AS total
+  FROM encounter_rounds er
+  JOIN encounter_participants ep ON er.participant_id = ep.id
+  JOIN encounters e ON ep.encounter_id = e.id
+  WHERE e.user_id = ? AND er.partner_climax = 1 AND er.partner_climax_location IS NOT NULL
+  GROUP BY er.partner_climax_location
+  ORDER BY total DESC');
+$climaxLocationStmt->execute([$uid]);
+$climaxLocationTotals = $climaxLocationStmt->fetchAll(PDO::FETCH_ASSOC);
 
 $climaxStatsStmt = $db->prepare('SELECT AVG(er.participant_climax) AS participant_rate, AVG(er.partner_climax) AS partner_rate
   FROM encounter_rounds er
@@ -567,44 +609,3 @@ if ($partnerScores) {
 <script src="../assets/js/app.js"></script>
 </body>
 </html>
-$penisSizeLabels = [
-  'xs_under_4' => 'X-Small (≤ 4")',
-  'small_4_5' => 'Small (4" - 5")',
-  'average_5_6' => 'Average (5" - 6")',
-  'above_avg_6_7' => 'Above average (6" - 7")',
-  'large_7_8' => 'Large (7" - 8")',
-  'xl_over_8' => 'X-Large (≥ 8")'
-];
-
-$climaxLocationLabels = [
-  'vaginal_internal' => 'Vaginal (internal)',
-  'vaginal_external' => 'Vaginal (external)',
-  'anal_internal' => 'Anal (internal)',
-  'anal_external' => 'Anal (external)',
-  'oral' => 'Oral',
-  'facial' => 'Facial',
-  'breasts_chest' => 'Breasts / chest',
-  'stomach_thighs' => 'Stomach / thighs',
-  'other_location' => 'Other location'
-];
-
-$satisfactionBySizeStmt = $db->prepare('SELECT p.penis_size_rating AS size, COUNT(*) AS rounds, AVG(er.satisfaction_rating) AS avg_satisfaction, AVG(er.duration_minutes) AS avg_duration
-  FROM encounter_rounds er
-  JOIN encounter_participants ep ON er.participant_id = ep.id
-  JOIN partners p ON p.id = ep.partner_id
-  JOIN encounters e ON ep.encounter_id = e.id
-  WHERE e.user_id = ? AND p.penis_size_rating IS NOT NULL
-  GROUP BY p.penis_size_rating
-  ORDER BY avg_satisfaction DESC');
-$satisfactionBySizeStmt->execute([$uid]);
-$satisfactionBySize = $satisfactionBySizeStmt->fetchAll(PDO::FETCH_ASSOC);
-
-$climaxLocationStmt = $db->prepare('SELECT er.partner_climax_location AS location, COUNT(*) AS total
-  FROM encounter_rounds er
-  JOIN encounter_participants ep ON er.participant_id = ep.id
-  JOIN encounters e ON ep.encounter_id = e.id
-  WHERE e.user_id = ? AND er.partner_climax = 1 AND er.partner_climax_location IS NOT NULL
-  GROUP BY er.partner_climax_location
-  ORDER BY total DESC');
-$climaxLocationStmt->execute([$uid]);
-$climaxLocationTotals = $climaxLocationStmt->fetchAll(PDO::FETCH_ASSOC);
