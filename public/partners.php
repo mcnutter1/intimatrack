@@ -25,15 +25,30 @@ $circumcisedOptions = [
   'yes' => 'Yes',
   'no' => 'No'
 ];
+$raceOptions = [
+  '' => 'Prefer not to say',
+  'asian' => 'Asian',
+  'black' => 'Black / African descent',
+  'white' => 'White / European descent',
+  'latino' => 'Latino / Hispanic',
+  'middle_eastern' => 'Middle Eastern / North African',
+  'south_asian' => 'South Asian',
+  'pacific_islander' => 'Native Hawaiian / Pacific Islander',
+  'indigenous' => 'Indigenous / First Nations',
+  'mixed' => 'Mixed / Multi-racial',
+  'other' => 'Other (specify in notes)'
+];
+$penisSizeOptions = [
+  '' => 'Prefer not to say',
+  'xs_under_4' => 'X-Small (<= 4\")',
+  'small_4_5' => 'Small (4\" - 5\")',
+  'average_5_6' => 'Average (5\" - 6\")',
+  'above_avg_6_7' => 'Above average (6\" - 7\")',
+  'large_7_8' => 'Large (7\" - 8\")',
+  'xl_over_8' => 'X-Large (>= 8\")'
+];
 $photoMimeAllowList = ['image/jpeg','image/png','image/gif','image/webp'];
 $maxPhotoSizeBytes = 5 * 1024 * 1024; // 5MB per image
-
-require_login();
-require_once __DIR__ . '/../inc/crypto.php';
-csrf_check();
-
-$uid = current_user()['id'];
-$action = $_GET['action'] ?? 'list';
 
 function load_partner(PDO $db, int $id, int $uid): ?array {
   $stmt = $db->prepare('SELECT * FROM partners WHERE id = ? AND user_id = ?');
@@ -46,6 +61,55 @@ function redirect_with_params(string $path, array $params = []): void {
   redirect($path . $qs);
 }
 
+function height_cm_from_feet_inches(?int $feet, ?int $inches): ?int {
+  if ($feet === null && $inches === null) {
+    return null;
+  }
+  $feet = max(0, $feet ?? 0);
+  $inches = max(0, min(11, $inches ?? 0));
+  $totalInches = ($feet * 12) + $inches;
+  if ($totalInches <= 0) {
+    return null;
+  }
+  return (int)round($totalInches * 2.54);
+}
+
+function height_components_from_cm($cm): array {
+  if (!$cm) {
+    return [null, null];
+  }
+  $cmInt = (int)$cm;
+  $totalInches = (int)round($cmInt / 2.54);
+  $feet = intdiv($totalInches, 12);
+  $inches = $totalInches % 12;
+  return [$feet, $inches];
+}
+
+function format_height_display($cm): string {
+  if (!$cm) {
+    return '—';
+  }
+  [$feet, $inches] = height_components_from_cm($cm);
+  if ($feet === null) {
+    return '—';
+  }
+  return sprintf("%d' %d\"", $feet, $inches);
+}
+
+function penis_size_label(?string $value, array $options): string {
+  if ($value === null || $value === '') {
+    return '—';
+  }
+  return $options[$value] ?? $value;
+}
+
+require_login();
+require_once __DIR__ . '/../inc/crypto.php';
+csrf_check();
+
+$uid = current_user()['id'];
+$action = $_GET['action'] ?? 'list';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $id = (int)($_POST['id'] ?? 0);
 
@@ -56,17 +120,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $relationship_context = 'other';
     }
     $relationship_details = trim($_POST['relationship_details'] ?? '');
-    $height_cm = $_POST['height_cm'] !== '' ? (int)$_POST['height_cm'] : null;
+
+    $heightFeet = $_POST['height_feet'] !== '' ? (int)$_POST['height_feet'] : null;
+    $heightInches = $_POST['height_inches'] !== '' ? (int)$_POST['height_inches'] : null;
+    $height_cm = height_cm_from_feet_inches($heightFeet, $heightInches);
 
     $build = $_POST['build'] ?? 'other';
     if (!array_key_exists($build, $buildOptions)) {
       $build = 'other';
     }
 
-    $sizeRating = null;
-    if ($_POST['overall_size_rating'] !== '') {
-      $sizeRating = max(1, min(10, (int)$_POST['overall_size_rating']));
+    $penisSizeInput = $_POST['penis_size_rating'] ?? '';
+    if (!array_key_exists($penisSizeInput, $penisSizeOptions)) {
+      $penisSizeInput = '';
     }
+    $penisSizeRating = $penisSizeInput === '' ? null : $penisSizeInput;
 
     $circumcisedInput = $_POST['circumcised'] ?? '';
     $circumcised = null;
@@ -76,8 +144,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $circumcised = 0;
     }
 
-    $race = trim($_POST['race'] ?? '');
-    if ($race === '') $race = null;
+    $raceInput = $_POST['race'] ?? '';
+    if (!array_key_exists($raceInput, $raceOptions)) {
+      $raceInput = '';
+    }
+    $race = $raceInput === '' ? null : $raceInput;
 
     $met_location = trim($_POST['met_location'] ?? '');
     if ($met_location === '') $met_location = null;
@@ -91,12 +162,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $notes_enc = it_encrypt(trim($_POST['notes'] ?? ''));
 
     if ($action === 'save_new') {
-      $stmt = $db->prepare('INSERT INTO partners (user_id, name, relationship_context, relationship_details, height_cm, build, overall_size_rating, circumcised, race, met_location, first_met_notes, dimensions_note, notes_enc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
-      $stmt->execute([$uid, $name, $relationship_context, $relationship_details ?: null, $height_cm, $build, $sizeRating, $circumcised, $race, $met_location, $first_met_notes, $dimensions_note, $notes_enc]);
+      $stmt = $db->prepare('INSERT INTO partners (user_id, name, relationship_context, relationship_details, height_cm, build, penis_size_rating, circumcised, race, met_location, first_met_notes, dimensions_note, notes_enc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
+      $stmt->execute([$uid, $name, $relationship_context, $relationship_details ?: null, $height_cm, $build, $penisSizeRating, $circumcised, $race, $met_location, $first_met_notes, $dimensions_note, $notes_enc]);
       redirect('partners.php');
     } elseif ($action === 'save_edit' && $id) {
-      $stmt = $db->prepare('UPDATE partners SET name=?, relationship_context=?, relationship_details=?, height_cm=?, build=?, overall_size_rating=?, circumcised=?, race=?, met_location=?, first_met_notes=?, dimensions_note=?, notes_enc=? WHERE id=? AND user_id=?');
-      $stmt->execute([$name, $relationship_context, $relationship_details ?: null, $height_cm, $build, $sizeRating, $circumcised, $race, $met_location, $first_met_notes, $dimensions_note, $notes_enc, $id, $uid]);
+      $stmt = $db->prepare('UPDATE partners SET name=?, relationship_context=?, relationship_details=?, height_cm=?, build=?, penis_size_rating=?, circumcised=?, race=?, met_location=?, first_met_notes=?, dimensions_note=?, notes_enc=? WHERE id=? AND user_id=?');
+      $stmt->execute([$name, $relationship_context, $relationship_details ?: null, $height_cm, $build, $penisSizeRating, $circumcised, $race, $met_location, $first_met_notes, $dimensions_note, $notes_enc, $id, $uid]);
       redirect('partners.php');
     }
   } elseif ($action === 'upload_photo') {
@@ -243,9 +314,11 @@ if ($action === 'new' || ($action === 'edit' && isset($_GET['id']))) {
     'name' => '',
     'relationship_context' => 'other',
     'relationship_details' => '',
-    'height_cm' => '',
+    'height_cm' => null,
+    'height_feet' => '',
+    'height_inches' => '',
     'build' => 'other',
-    'overall_size_rating' => '',
+    'penis_size_rating' => '',
     'circumcised' => null,
     'circumcised_value' => '',
     'race' => '',
@@ -261,6 +334,23 @@ if ($action === 'new' || ($action === 'edit' && isset($_GET['id']))) {
     if ($partner) {
       $partner['notes'] = it_decrypt($partner['notes_enc']);
       $partner['circumcised_value'] = $partner['circumcised'] === null ? '' : ($partner['circumcised'] ? 'yes' : 'no');
+      if (!array_key_exists($partner['penis_size_rating'] ?? '', $penisSizeOptions)) {
+        if (!empty($partner['penis_size_rating'])) {
+          $penisSizeOptions[$partner['penis_size_rating']] = 'Legacy rating (' . $partner['penis_size_rating'] . ')';
+        } else {
+          $partner['penis_size_rating'] = '';
+        }
+      }
+      if (!array_key_exists($partner['race'] ?? '', $raceOptions)) {
+        if (!empty($partner['race'])) {
+          $raceOptions[$partner['race']] = $partner['race'];
+        } else {
+          $partner['race'] = '';
+        }
+      }
+      [$feet, $inches] = height_components_from_cm($partner['height_cm'] ?? null);
+      $partner['height_feet'] = $feet ?? '';
+      $partner['height_inches'] = $inches ?? '';
     }
   }
 ?>
@@ -287,10 +377,14 @@ if ($action === 'new' || ($action === 'edit' && isset($_GET['id']))) {
         <input name="relationship_details" class="form-control" placeholder="Optional context" value="<?= h($partner['relationship_details'] ?? '') ?>">
       </div>
       <div class="col-md-3">
-        <label class="form-label">Height (cm)</label>
-        <input name="height_cm" type="number" class="form-control" value="<?= h($partner['height_cm'] ?? '') ?>">
+        <label class="form-label">Height (feet)</label>
+        <input name="height_feet" type="number" min="0" class="form-control" value="<?= h($partner['height_feet'] ?? '') ?>">
       </div>
       <div class="col-md-3">
+        <label class="form-label">Height (inches)</label>
+        <input name="height_inches" type="number" min="0" max="11" class="form-control" value="<?= h($partner['height_inches'] ?? '') ?>">
+      </div>
+      <div class="col-md-4">
         <label class="form-label">Build</label>
         <select name="build" class="form-select">
           <?php foreach ($buildOptions as $value => $label): ?>
@@ -299,8 +393,12 @@ if ($action === 'new' || ($action === 'edit' && isset($_GET['id']))) {
         </select>
       </div>
       <div class="col-md-4">
-        <label class="form-label">Overall size rating (1-10)</label>
-        <input name="overall_size_rating" type="number" min="1" max="10" class="form-control" value="<?= h($partner['overall_size_rating'] ?? '') ?>">
+        <label class="form-label">Penis Size Rating</label>
+        <select name="penis_size_rating" class="form-select">
+          <?php foreach ($penisSizeOptions as $value => $label): ?>
+            <option value="<?= $value ?>" <?= ($partner['penis_size_rating'] ?? '') === $value ? 'selected' : '' ?>><?= h($label) ?></option>
+          <?php endforeach; ?>
+        </select>
       </div>
       <div class="col-md-4">
         <label class="form-label">Circumcised</label>
@@ -312,13 +410,17 @@ if ($action === 'new' || ($action === 'edit' && isset($_GET['id']))) {
       </div>
       <div class="col-md-4">
         <label class="form-label">Race / Ethnicity</label>
-        <input name="race" class="form-control" value="<?= h($partner['race'] ?? '') ?>">
+        <select name="race" class="form-select">
+          <?php foreach ($raceOptions as $value => $label): ?>
+            <option value="<?= $value ?>" <?= ($partner['race'] ?? '') === $value ? 'selected' : '' ?>><?= h($label) ?></option>
+          <?php endforeach; ?>
+        </select>
       </div>
-      <div class="col-md-6">
+      <div class="col-md-4">
         <label class="form-label">Where you first met</label>
         <input name="met_location" class="form-control" placeholder="e.g., conference, college" value="<?= h($partner['met_location'] ?? '') ?>">
       </div>
-      <div class="col-md-6">
+      <div class="col-md-4">
         <label class="form-label">First meeting notes</label>
         <input name="first_met_notes" class="form-control" placeholder="Optional memory" value="<?= h($partner['first_met_notes'] ?? '') ?>">
       </div>
@@ -350,6 +452,7 @@ if ($action === 'new' || ($action === 'edit' && isset($_GET['id']))) {
     $photoStmt->execute([$partnerId, $uid]);
     $photos = $photoStmt->fetchAll();
     $circumcisedLabel = $partner['circumcised'] === null ? 'Unknown' : ($partner['circumcised'] ? 'Yes' : 'No');
+    $raceLabel = $partner['race'] ? ($raceOptions[$partner['race']] ?? $partner['race']) : '—';
 ?>
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h2 class="h5 m-0">Partner profile</h2>
@@ -366,13 +469,13 @@ if ($action === 'new' || ($action === 'edit' && isset($_GET['id']))) {
     <dt class="col-sm-4">Build</dt>
     <dd class="col-sm-8"><?= h($buildOptions[$partner['build']] ?? ucfirst($partner['build'])) ?></dd>
     <dt class="col-sm-4">Height</dt>
-    <dd class="col-sm-8"><?= $partner['height_cm'] ? h($partner['height_cm']) . ' cm' : '—' ?></dd>
-    <dt class="col-sm-4">Overall size rating</dt>
-    <dd class="col-sm-8"><?= $partner['overall_size_rating'] ? h($partner['overall_size_rating']) . '/10' : '—' ?></dd>
+    <dd class="col-sm-8"><?= h(format_height_display($partner['height_cm'])) ?></dd>
+    <dt class="col-sm-4">Penis size rating</dt>
+    <dd class="col-sm-8"><?= h(penis_size_label($partner['penis_size_rating'], $penisSizeOptions)) ?></dd>
     <dt class="col-sm-4">Circumcised</dt>
     <dd class="col-sm-8"><?= h($circumcisedLabel) ?></dd>
     <dt class="col-sm-4">Race / Ethnicity</dt>
-    <dd class="col-sm-8"><?= $partner['race'] ? h($partner['race']) : '—' ?></dd>
+    <dd class="col-sm-8"><?= h($raceLabel) ?></dd>
     <dt class="col-sm-4">First met</dt>
     <dd class="col-sm-8"><?= $partner['met_location'] ? h($partner['met_location']) : '—' ?></dd>
     <dt class="col-sm-4">First meeting notes</dt>
@@ -424,13 +527,15 @@ if ($action === 'new' || ($action === 'edit' && isset($_GET['id']))) {
 </div>
 <div class="card p-0">
   <table class="table table-hover align-middle m-0">
-    <thead><tr><th>Name</th><th>Relationship</th><th>Size rating</th><th>Met at</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Relationship</th><th>Penis size</th><th>Met at</th><th></th></tr></thead>
     <tbody>
-      <?php foreach ($rows as $r): ?>
+      <?php foreach ($rows as $r):
+        $penisLabel = penis_size_label($r['penis_size_rating'] ?? null, $penisSizeOptions);
+      ?>
         <tr>
           <td><?= h($r['name']) ?></td>
           <td><?= h($relationshipOptions[$r['relationship_context']] ?? ucfirst(str_replace('_',' ', $r['relationship_context']))) ?></td>
-          <td><?= $r['overall_size_rating'] ? h($r['overall_size_rating']) . '/10' : '—' ?></td>
+          <td><?= h($penisLabel) ?></td>
           <td><?= $r['met_location'] ? h($r['met_location']) : '—' ?></td>
           <td class="text-end">
             <a class="btn btn-sm btn-outline-primary" href="partners.php?action=view&id=<?= (int)$r['id'] ?>">View</a>

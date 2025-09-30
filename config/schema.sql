@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS partners (
   relationship_details VARCHAR(190) DEFAULT NULL,
   height_cm INT DEFAULT NULL,
   build ENUM('slim','average','athletic','curvy','plus','other') DEFAULT 'other',
-  overall_size_rating TINYINT UNSIGNED DEFAULT NULL, -- 1-10 subjective size rating
+  penis_size_rating ENUM('xs_under_4','small_4_5','average_5_6','above_avg_6_7','large_7_8','xl_over_8') DEFAULT NULL,
   circumcised TINYINT(1) DEFAULT NULL, -- NULL = unknown, 1 = yes, 0 = no
   race VARCHAR(100) DEFAULT NULL,
   met_location VARCHAR(190) DEFAULT NULL,
@@ -54,15 +54,17 @@ CREATE TABLE IF NOT EXISTS encounters (
   physical_intensity TINYINT UNSIGNED DEFAULT NULL, -- 1-10
   emotional_intensity TINYINT UNSIGNED DEFAULT NULL, -- 1-10
   overall_rating TINYINT UNSIGNED DEFAULT NULL, -- 1-5
-  outcome_placement_enc TEXT DEFAULT NULL, -- encrypted short descriptor for health tracking (e.g., internal/external)
+  outcome_placement_enc TEXT DEFAULT NULL, -- encrypted JSON array of outcomes (non-explicit)
   cleanup_needed TINYINT(1) DEFAULT 0,
   cleanup_method ENUM('none','tissues','wipe','shower','other') DEFAULT 'none',
+  cleanup_performed_by_partner_id INT DEFAULT NULL,
   aftercare_notes_enc TEXT DEFAULT NULL, -- encrypted non-explicit aftercare/hygiene notes
   scenario_tag ENUM('standard','cuckold_observer','cuckold_present_partner','group','other') DEFAULT 'standard',
   summary_enc TEXT DEFAULT NULL, -- encrypted freeform notes (non-explicit)
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (cleanup_performed_by_partner_id) REFERENCES partners(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 -- Encounter participants (partners)
@@ -70,7 +72,16 @@ CREATE TABLE IF NOT EXISTS encounter_participants (
   id INT AUTO_INCREMENT PRIMARY KEY,
   encounter_id INT NOT NULL,
   partner_id INT NOT NULL,
-  role ENUM('primary','secondary','observer','other') DEFAULT 'primary',
+  scenario_role ENUM(
+    'lead_partner',
+    'receiving_partner',
+    'support_partner',
+    'observer',
+    'cuckold_partner',
+    'cuckold_cleanup',
+    'aftercare_support',
+    'other'
+  ) DEFAULT 'lead_partner',
   FOREIGN KEY (encounter_id) REFERENCES encounters(id) ON DELETE CASCADE,
   FOREIGN KEY (partner_id) REFERENCES partners(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
