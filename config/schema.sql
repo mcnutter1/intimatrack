@@ -112,12 +112,26 @@ CREATE TABLE IF NOT EXISTS encounter_rounds (
     'stomach_thighs',
     'other_location'
   ) DEFAULT NULL,
+  duration_minutes SMALLINT UNSIGNED DEFAULT NULL,
+  satisfaction_rating TINYINT UNSIGNED DEFAULT NULL,
   cleanup_performed_by_partner_id INT DEFAULT NULL,
   cleanup_method ENUM('none','towel','wipes','shower','oral_cleanup','self_cleanup','other') DEFAULT 'none',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (participant_id) REFERENCES encounter_participants(id) ON DELETE CASCADE,
   FOREIGN KEY (cleanup_performed_by_partner_id) REFERENCES partners(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS user_locations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  label VARCHAR(190) NOT NULL,
+  latitude DECIMAL(10,7) DEFAULT NULL,
+  longitude DECIMAL(10,7) DEFAULT NULL,
+  times_used INT UNSIGNED DEFAULT 1,
+  last_used_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_location (user_id, label),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- Simple audit log (optional)

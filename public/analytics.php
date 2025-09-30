@@ -42,6 +42,74 @@ $config = require __DIR__ . '/../config/config.php';
 require_login();
 $uid = current_user()['id'];
 
+$scenarioLabels = [
+  'vaginal_intercourse' => 'Vaginal intercourse',
+  'anal_intercourse' => 'Anal intercourse',
+  'oral_giving' => 'Oral (giving)',
+  'oral_receiving' => 'Oral (receiving)',
+  'mutual_masturbation' => 'Mutual masturbation',
+  'toy_play' => 'Toy play',
+  'foreplay' => 'Extended foreplay',
+  'voyeurism' => 'Voyeurism / watching',
+  'cuckold_focus' => 'Cuckold-focused play',
+  'aftercare_bonding' => 'Aftercare / bonding',
+  'other' => 'Other scenario'
+];
+
+$roundSummaryStmt = $db->prepare('SELECT COUNT(*) AS rounds, AVG(er.satisfaction_rating) AS avg_satisfaction, AVG(er.duration_minutes) AS avg_duration
+  FROM encounter_rounds er
+  JOIN encounter_participants ep ON er.participant_id = ep.id
+  JOIN encounters e ON ep.encounter_id = e.id
+  WHERE e.user_id = ?');
+$roundSummaryStmt->execute([$uid]);
+$roundSummary = $roundSummaryStmt->fetch() ?: ['rounds' => 0, 'avg_satisfaction' => null, 'avg_duration' => null];
+
+$scenarioStatsStmt = $db->prepare('SELECT er.scenario, COUNT(*) AS rounds, AVG(er.satisfaction_rating) AS avg_satisfaction, AVG(er.duration_minutes) AS avg_duration
+  FROM encounter_rounds er
+  JOIN encounter_participants ep ON er.participant_id = ep.id
+  JOIN encounters e ON ep.encounter_id = e.id
+  WHERE e.user_id = ?
+  GROUP BY er.scenario
+  ORDER BY rounds DESC');
+$scenarioStatsStmt->execute([$uid]);
+$scenarioStats = $scenarioStatsStmt->fetchAll();
+
+$partnerSatisfactionStmt = $db->prepare('SELECT p.name, COUNT(*) AS rounds, AVG(er.satisfaction_rating) AS avg_satisfaction, SUM(er.duration_minutes) AS total_duration
+  FROM encounter_rounds er
+  JOIN encounter_participants ep ON er.participant_id = ep.id
+  JOIN encounters e ON ep.encounter_id = e.id
+  JOIN partners p ON p.id = ep.partner_id
+  WHERE e.user_id = ?
+  GROUP BY p.id, p.name
+  HAVING rounds > 0
+  ORDER BY avg_satisfaction DESC
+  LIMIT 8');
+$partnerSatisfactionStmt->execute([$uid]);
+$partnerSatisfaction = $partnerSatisfactionStmt->fetchAll();
+
+$climaxStatsStmt = $db->prepare('SELECT AVG(er.participant_climax) AS participant_rate, AVG(er.partner_climax) AS partner_rate
+  FROM encounter_rounds er
+  JOIN encounter_participants ep ON er.participant_id = ep.id
+  JOIN encounters e ON ep.encounter_id = e.id
+  WHERE e.user_id = ?');
+$climaxStatsStmt->execute([$uid]);
+$climaxStats = $climaxStatsStmt->fetch() ?: ['participant_rate' => null, 'partner_rate' => null];
+
+$totalEncountersStmt = $db->prepare('SELECT COUNT(*) FROM encounters WHERE user_id = ?');
+$totalEncountersStmt->execute([$uid]);
+$totalEncounters = (int)$totalEncountersStmt->fetchColumn();
+
+$engagedPartnersStmt = $db->prepare('SELECT COUNT(DISTINCT ep.partner_id) FROM encounter_participants ep JOIN encounters e ON ep.encounter_id = e.id WHERE e.user_id = ?');
+$engagedPartnersStmt->execute([$uid]);
+$engagedPartners = (int)$engagedPartnersStmt->fetchColumn();
+
+$avgSatisfaction = $roundSummary['avg_satisfaction'] !== null ? round((float)$roundSummary['avg_satisfaction'], 1) : null;
+$avgDuration = $roundSummary['avg_duration'] !== null ? round((float)$roundSummary['avg_duration'], 1) : null;
+$topScenarioKey = $scenarioStats[0]['scenario'] ?? null;
+$topScenarioLabel = $topScenarioKey ? ($scenarioLabels[$topScenarioKey] ?? ucwords(str_replace('_', ' ', $topScenarioKey))) : null;
+$participantClimaxRate = $climaxStats['participant_rate'] !== null ? round((float)$climaxStats['participant_rate'] * 100) : null;
+$partnerClimaxRate = $climaxStats['partner_rate'] !== null ? round((float)$climaxStats['partner_rate'] * 100) : null;
+
 // Aggregate stats
 $by_partner = $db->prepare("SELECT p.name, COUNT(*) c, AVG(e.physical_intensity) pavg, AVG(e.emotional_intensity) eavg, AVG(e.overall_rating) ravg
   FROM encounters e
@@ -62,65 +130,107 @@ $freq_by_day = $db->prepare("SELECT DATE(occurred_at) d, COUNT(*) c FROM encount
 $freq_by_day->execute([$uid]);
 $freq = $freq_by_day->fetchAll();
 ?>
+<div class="row g-3 mb-3">
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="card p-3 h-100">
+      <div class="small-muted text-uppercase">Encounters logged</div>
+      <div class="display-6 fw-semibold"><?= $totalEncounters ?></div>
+      <div class="small-muted">Rounds captured: <?= (int)($roundSummary['rounds'] ?? 0) ?></div>
+      <div class="small-muted">Partners engaged: <?= $engagedPartners ?></div>
+    </div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="card p-3 h-100">
+      <div class="small-muted text-uppercase">Average satisfaction</div>
+      <div class="display-6 fw-semibold"><?= $avgSatisfaction !== null ? $avgSatisfaction : '—' ?><span class="fs-5">/10</span></div>
+      <div class="small-muted">Based on <?= (int)($roundSummary['rounds'] ?? 0) ?> rounds</div>
+    </div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="card p-3 h-100">
+      <div class="small-muted text-uppercase">Average round duration</div>
+      <div class="display-6 fw-semibold"><?= $avgDuration !== null ? $avgDuration : '—' ?><span class="fs-5"> min</span></div>
+      <div class="small-muted">Top scenario: <?= $topScenarioLabel ? h($topScenarioLabel) : '—' ?></div>
+    </div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="card p-3 h-100">
+      <div class="small-muted text-uppercase">Climax rate</div>
+      <div class="display-6 fw-semibold">
+        <?= $participantClimaxRate !== null ? $participantClimaxRate . '%' : '—' ?>
+        <span class="fs-6 text-muted">you</span>
+      </div>
+      <div class="small-muted">Partners: <?= $partnerClimaxRate !== null ? $partnerClimaxRate . '%' : '—' ?></div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-12 col-lg-6">
+    <div class="card p-3 h-100">
+      <h2 class="h6">Scenario breakdown</h2>
+      <?php if (!$scenarioStats): ?>
+        <div class="small-muted">Log rounds to see scenario trends.</div>
+      <?php else: ?>
+        <canvas id="chartScenario" height="200"></canvas>
+      <?php endif; ?>
+    </div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <div class="card p-3 h-100">
+      <h2 class="h6">Partner satisfaction</h2>
+      <?php if (!$partnerSatisfaction): ?>
+        <div class="small-muted">Add rounds with partners to unlock this insight.</div>
+      <?php else: ?>
+        <canvas id="chartPartnerSatisfaction" height="200"></canvas>
+      <?php endif; ?>
+    </div>
+  </div>
+</div>
+
 <div class="row g-3">
   <div class="col-12 col-lg-6">
     <div class="card p-3">
       <h2 class="h6">Intensity by Partner</h2>
-      <canvas id="chartPartner" height="200"></canvas>
+      <?php if (!$by_partner): ?>
+        <div class="small-muted">No encounters logged yet.</div>
+      <?php else: ?>
+        <canvas id="chartPartner" height="200"></canvas>
+      <?php endif; ?>
     </div>
   </div>
   <div class="col-12 col-lg-6">
     <div class="card p-3">
       <h2 class="h6">Top Locations</h2>
-      <canvas id="chartLocation" height="200"></canvas>
+      <?php if (!$by_location): ?>
+        <div class="small-muted">Log encounters with locations to populate this chart.</div>
+      <?php else: ?>
+        <canvas id="chartLocation" height="200"></canvas>
+      <?php endif; ?>
     </div>
   </div>
   <div class="col-12">
     <div class="card p-3">
       <h2 class="h6">Timeline Frequency</h2>
-      <canvas id="chartFreq" height="200"></canvas>
+      <?php if (!$freq): ?>
+        <div class="small-muted">No encounters logged yet.</div>
+      <?php else: ?>
+        <canvas id="chartFreq" height="200"></canvas>
+      <?php endif; ?>
     </div>
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script>
-const byPartner = <?= json_encode($by_partner) ?>;
-const byLocation = <?= json_encode($by_location) ?>;
-const freq = <?= json_encode($freq) ?>;
-
-new Chart(document.getElementById('chartPartner'), {
-  type:'bar',
-  data:{
-    labels: byPartner.map(r=>r.name),
-    datasets:[
-      {label:'Physical', data: byPartner.map(r=>Number(r.pavg?.toFixed(2) || 0))},
-      {label:'Emotional', data: byPartner.map(r=>Number(r.eavg?.toFixed(2) || 0))},
-      {label:'Overall', data: byPartner.map(r=>Number(r.ravg?.toFixed(2) || 0))}
-    ]
-  },
-  options:{responsive:true}
-});
-
-new Chart(document.getElementById('chartLocation'), {
-  type:'bar',
-  data:{
-    labels: byLocation.map(r=>r.label),
-    datasets:[
-      {label:'Physical avg', data: byLocation.map(r=>Number((r.pavg||0).toFixed(2)))},
-      {label:'Emotional avg', data: byLocation.map(r=>Number((r.eavg||0).toFixed(2)))}
-    ]
-  }
-});
-
-new Chart(document.getElementById('chartFreq'), {
-  type:'line',
-  data:{
-    labels: freq.map(r=>r.d),
-    datasets:[{label:'Encounters', data: freq.map(r=>r.c)}]
-  }
-});
-</script>
+<script type="application/json" id="analytics-data"><?= json_encode([
+  'byPartner' => $by_partner,
+  'byLocation' => $by_location,
+  'frequency' => $freq,
+  'scenarioStats' => $scenarioStats,
+  'partnerSatisfaction' => $partnerSatisfaction,
+  'scenarioLabels' => $scenarioLabels
+]) ?></script>
+<script src="../assets/js/analytics.js"></script>
 
 </main>
 <footer class="app container text-center small">

@@ -4,6 +4,78 @@
   const participantTemplate = document.getElementById('participant-template');
   const roundTemplate = document.getElementById('round-template');
   const summaryBody = document.getElementById('encounter-summary-body');
+  const savedLocationDataEl = document.getElementById('saved-location-data');
+  const locationLabelInput = document.getElementById('location-label');
+  const savedLocationSelect = document.getElementById('saved-location-select');
+  const latitudeInput = document.querySelector('input[name="latitude"]');
+  const longitudeInput = document.querySelector('input[name="longitude"]');
+  const mapContainer = document.getElementById('encounter-map');
+  let map = null;
+  let marker = null;
+
+  let savedLocations = [];
+  if (savedLocationDataEl) {
+    try {
+      savedLocations = JSON.parse(savedLocationDataEl.textContent || '[]');
+    } catch (err) {
+      savedLocations = [];
+    }
+  }
+
+  const findSavedLocation = label => {
+    if (!label) return null;
+    const needle = label.trim().toLowerCase();
+    return savedLocations.find(loc => (loc.label || '').toLowerCase() === needle) || null;
+  };
+
+  const parseCoord = value => {
+    const num = parseFloat(value);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const setCoordinateInputs = (lat, lng) => {
+    if (latitudeInput) latitudeInput.value = lat !== undefined && lat !== null ? Number(lat).toFixed(6) : '';
+    if (longitudeInput) longitudeInput.value = lng !== undefined && lng !== null ? Number(lng).toFixed(6) : '';
+  };
+
+  const updateMarker = (lat, lng) => {
+    if (!map) return;
+    if (lat === null || lng === null) {
+      if (marker) {
+        map.removeLayer(marker);
+        marker = null;
+      }
+      return;
+    }
+    if (!marker) {
+      marker = L.marker([lat, lng]).addTo(map);
+    } else {
+      marker.setLatLng([lat, lng]);
+    }
+    map.setView([lat, lng], Math.max(map.getZoom(), 13));
+  };
+
+  const initMap = () => {
+    if (!mapContainer || typeof L === 'undefined') return;
+    const initialLat = parseCoord(mapContainer.dataset.lat);
+    const initialLng = parseCoord(mapContainer.dataset.lng);
+    const hasInitial = initialLat !== null && initialLng !== null;
+    map = L.map(mapContainer, {zoomControl: true});
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    map.setView(hasInitial ? [initialLat, initialLng] : [37.7749, -122.4194], hasInitial ? 13 : 3);
+    if (hasInitial) {
+      marker = L.marker([initialLat, initialLng]).addTo(map);
+    }
+
+    map.on('click', event => {
+      const {lat, lng} = event.latlng;
+      setCoordinateInputs(lat, lng);
+      updateMarker(lat, lng);
+    });
+  };
 
   function updatePartnerClimaxVisibility(root=document) {
     root.querySelectorAll('.partner-climax-select').forEach(select => {
@@ -40,6 +112,8 @@
         const participantClimax = round.querySelector('select[name$="[participant_climax]"]');
         const partnerClimax = round.querySelector('select.partner-climax-select');
         const partnerClimaxLocation = round.querySelector('.partner-climax-location select');
+        const durationInput = round.querySelector('input[name$="[duration_minutes]"]');
+        const satisfactionInput = round.querySelector('input[name$="[satisfaction_rating]"]');
         const cleanupMethod = round.querySelector('select[name$="[cleanup_method]"]');
         const cleanupPartnerSelect = round.querySelector('select[name$="[cleanup_partner_id]"]');
         const details = [];
@@ -56,7 +130,13 @@
           }
           details.push(text);
         }
-        if (cleanupMethod) {
+        if (durationInput && durationInput.value) {
+          details.push('Duration: ' + durationInput.value + ' min');
+        }
+        if (satisfactionInput && satisfactionInput.value) {
+          details.push('Satisfaction: ' + satisfactionInput.value + '/10');
+        }
+        if (cleanupMethod && (cleanupMethod.value || (cleanupPartnerSelect && cleanupPartnerSelect.value))) {
           let cleanupText = 'Cleanup: ' + (cleanupMethod.options[cleanupMethod.selectedIndex]?.text || 'Not recorded');
           if (cleanupPartnerSelect && cleanupPartnerSelect.value) {
             cleanupText += ' by ' + cleanupPartnerSelect.options[cleanupPartnerSelect.selectedIndex]?.text;
@@ -140,4 +220,54 @@
 
   updatePartnerClimaxVisibility(document);
   renderSummary();
+  initMap();
+
+  if (savedLocationSelect) {
+    savedLocationSelect.addEventListener('change', () => {
+      const selectedOption = savedLocationSelect.options[savedLocationSelect.selectedIndex];
+      if (!selectedOption || !selectedOption.value) {
+        return;
+      }
+      const record = findSavedLocation(selectedOption.value) || {
+        label: selectedOption.value,
+        latitude: selectedOption.dataset.lat ? parseFloat(selectedOption.dataset.lat) : null,
+        longitude: selectedOption.dataset.lng ? parseFloat(selectedOption.dataset.lng) : null
+      };
+      if (locationLabelInput && record.label) {
+        locationLabelInput.value = record.label;
+      }
+      const lat = record.latitude !== null ? parseFloat(record.latitude) : parseCoord(latitudeInput?.value);
+      const lng = record.longitude !== null ? parseFloat(record.longitude) : parseCoord(longitudeInput?.value);
+      if (lat !== null && lng !== null) {
+        setCoordinateInputs(lat, lng);
+        updateMarker(lat, lng);
+      }
+    });
+  }
+
+  if (locationLabelInput) {
+    locationLabelInput.addEventListener('blur', () => {
+      const match = findSavedLocation(locationLabelInput.value);
+      if (match) {
+        if (match.latitude !== null && match.longitude !== null) {
+          setCoordinateInputs(match.latitude, match.longitude);
+          updateMarker(match.latitude, match.longitude);
+        }
+      }
+    });
+  }
+
+  const coordInputs = [latitudeInput, longitudeInput];
+  coordInputs.forEach(input => {
+    if (!input) return;
+    input.addEventListener('change', () => {
+      const lat = parseCoord(latitudeInput?.value);
+      const lng = parseCoord(longitudeInput?.value);
+      if (lat !== null && lng !== null) {
+        updateMarker(lat, lng);
+      } else {
+        updateMarker(null, null);
+      }
+    });
+  });
 })();

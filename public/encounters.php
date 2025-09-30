@@ -73,6 +73,8 @@ function default_round_payload(): array {
     'participant_climax' => '',
     'partner_climax' => '',
     'partner_climax_location' => '',
+    'duration_minutes' => '',
+    'satisfaction_rating' => '',
     'cleanup_partner_id' => '',
     'cleanup_method' => 'none'
   ];
@@ -96,6 +98,10 @@ function render_round_row(
   $participantClimax = $round['participant_climax'] ?? '';
   $partnerClimax = $round['partner_climax'] ?? '';
   $partnerClimaxLocation = $round['partner_climax_location'] ?? '';
+  $durationMinutes = $round['duration_minutes'] ?? '';
+  if ($durationMinutes === null) $durationMinutes = '';
+  $satisfactionRating = $round['satisfaction_rating'] ?? '';
+  if ($satisfactionRating === null) $satisfactionRating = '';
 ?>
   <div class="round-row border rounded p-3 mb-2" data-round-index="<?= h((string)$roundIndex) ?>">
     <div class="row g-3">
@@ -148,6 +154,14 @@ function render_round_row(
             <option value="<?= h($value) ?>" <?= $partnerClimaxLocation === $value ? 'selected' : '' ?>><?= h($label) ?></option>
           <?php endforeach; ?>
         </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Duration (minutes)</label>
+        <input name="<?= $prefix ?>[duration_minutes]" type="number" min="0" class="form-control form-control-sm" value="<?= h($durationMinutes) ?>" placeholder="e.g., 25">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Satisfaction (1–10)</label>
+        <input name="<?= $prefix ?>[satisfaction_rating]" type="number" min="1" max="10" class="form-control form-control-sm" value="<?= h($satisfactionRating) ?>">
       </div>
       <div class="col-md-3">
         <label class="form-label">Cleanup performed by</label>
@@ -237,6 +251,8 @@ function build_encounter_summary(
       $participantClimax = $round['participant_climax'] ?? '';
       $partnerClimax = $round['partner_climax'] ?? '';
       $partnerClimaxLocation = $round['partner_climax_location'] ?? '';
+      $durationMinutes = $round['duration_minutes'] ?? null;
+      $satisfactionRating = $round['satisfaction_rating'] ?? null;
       $cleanupMethod = $cleanupMethodOptions[$round['cleanup_method'] ?? ''] ?? null;
       $cleanupPartnerId = (int)($round['cleanup_partner_id'] ?? 0);
       $cleanupPartnerName = $cleanupPartnerId ? ($partnerOptions[$cleanupPartnerId] ?? ('Partner #' . $cleanupPartnerId)) : null;
@@ -247,6 +263,8 @@ function build_encounter_summary(
         'participant_climax' => $participantClimax,
         'partner_climax' => $partnerClimax,
         'partner_climax_location' => $climaxLocationOptions[$partnerClimaxLocation] ?? '',
+        'duration_minutes' => $durationMinutes,
+        'satisfaction_rating' => $satisfactionRating,
         'cleanup_method' => $cleanupMethod,
         'cleanup_partner' => $cleanupPartnerName
       ];
@@ -272,6 +290,24 @@ $partner_opts = $db->prepare('SELECT id, name FROM partners WHERE user_id = ? OR
 $partner_opts->execute([$uid]);
 $partner_opts = $partner_opts->fetchAll(PDO::FETCH_KEY_PAIR);
 
+$savedLocationsStmt = $db->prepare('SELECT label, latitude, longitude FROM user_locations WHERE user_id=? ORDER BY times_used DESC, last_used_at DESC, label ASC');
+$savedLocationsStmt->execute([$uid]);
+$savedLocations = $savedLocationsStmt->fetchAll(PDO::FETCH_ASSOC);
+if (!$savedLocations) {
+  $fallbackStmt = $db->prepare('SELECT DISTINCT COALESCE(NULLIF(location_label, \'\'), location_type) AS label, latitude, longitude FROM encounters WHERE user_id=? AND (location_label <> \'\' OR latitude IS NOT NULL OR longitude IS NOT NULL) ORDER BY occurred_at DESC LIMIT 25');
+  $fallbackStmt->execute([$uid]);
+  $savedLocations = $fallbackStmt->fetchAll(PDO::FETCH_ASSOC);
+}
+$seenLabels = [];
+$savedLocations = array_values(array_filter($savedLocations, function ($loc) use (&$seenLabels) {
+  $label = trim($loc['label'] ?? '');
+  if ($label === '' || isset($seenLabels[strtolower($label)])) {
+    return false;
+  }
+  $seenLabels[strtolower($label)] = true;
+  return true;
+}));
+
 function sanitize_participants_input(array $input, array $partnerOptions, array $participantRoleOptions, array $scenarioOptions, array $positionOptions, array $cleanupMethodOptions, array $climaxLocationOptions): array {
   $result = [];
   foreach (array_values($input) as $participant) {
@@ -295,10 +331,20 @@ function sanitize_participants_input(array $input, array $partnerOptions, array 
       $participantClimax = $round['participant_climax'] ?? '';
       $partnerClimax = $round['partner_climax'] ?? '';
       $partnerClimaxLocation = $round['partner_climax_location'] ?? '';
-      if ($partnerClimax !== 'yes') {
-        $partnerClimaxLocation = '';
-      } elseif (!array_key_exists($partnerClimaxLocation, $climaxLocationOptions)) {
-        $partnerClimaxLocation = '';
+     if ($partnerClimax !== 'yes') {
+       $partnerClimaxLocation = '';
+     } elseif (!array_key_exists($partnerClimaxLocation, $climaxLocationOptions)) {
+       $partnerClimaxLocation = '';
+     }
+
+      $durationMinutes = $round['duration_minutes'] ?? '';
+      $durationMinutes = $durationMinutes === '' ? null : max(0, (int)$durationMinutes);
+
+      $satisfactionRating = $round['satisfaction_rating'] ?? '';
+      if ($satisfactionRating === '') {
+        $satisfactionRating = null;
+      } else {
+        $satisfactionRating = clamp_int((int)$satisfactionRating, 1, 10);
       }
 
       $cleanupPartnerId = (int)($round['cleanup_partner_id'] ?? 0);
@@ -317,6 +363,8 @@ function sanitize_participants_input(array $input, array $partnerOptions, array 
         'participant_climax' => in_array($participantClimax, ['yes','no'], true) ? $participantClimax : '',
         'partner_climax' => in_array($partnerClimax, ['yes','no'], true) ? $partnerClimax : '',
         'partner_climax_location' => $partnerClimaxLocation,
+        'duration_minutes' => $durationMinutes,
+        'satisfaction_rating' => $satisfactionRating,
         'cleanup_partner_id' => $cleanupPartnerId,
         'cleanup_method' => $cleanupMethod
       ];
@@ -376,7 +424,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
 
       $participantInsert = $db->prepare('INSERT INTO encounter_participants(encounter_id, partner_id) VALUES(?, ?)');
-      $roundInsert = $db->prepare('INSERT INTO encounter_rounds(participant_id, round_order, role, scenario, positions, participant_climax, partner_climax, partner_climax_location, cleanup_performed_by_partner_id, cleanup_method) VALUES(?,?,?,?,?,?,?,?,?,?)');
+      $roundInsert = $db->prepare('INSERT INTO encounter_rounds(participant_id, round_order, role, scenario, positions, participant_climax, partner_climax, partner_climax_location, duration_minutes, satisfaction_rating, cleanup_performed_by_partner_id, cleanup_method) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)');
 
       foreach ($participantsData as $participantIndex => $participant) {
         $participantInsert->execute([$encounterId, $participant['partner_id']]);
@@ -394,10 +442,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $participantClimaxValue,
             $partnerClimaxValue,
             $round['partner_climax_location'] ?: null,
+            $round['duration_minutes'] ?? null,
+            $round['satisfaction_rating'] ?? null,
             $round['cleanup_partner_id'] ?: null,
             $round['cleanup_method']
           ]);
         }
+      }
+
+      if ($location_label !== '') {
+        $upsertLocation = $db->prepare('INSERT INTO user_locations (user_id, label, latitude, longitude, times_used, last_used_at) VALUES (?,?,?,?,1,?)
+          ON DUPLICATE KEY UPDATE latitude = VALUES(latitude), longitude = VALUES(longitude), times_used = times_used + 1, last_used_at = VALUES(last_used_at)');
+        $upsertLocation->execute([$uid, $location_label, $latitude, $longitude, $occurred_at]);
       }
 
       $db->commit();
@@ -479,7 +535,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($participants) {
         $participantIds = array_column($participants, 'id');
         $placeholders = implode(',', array_fill(0, count($participantIds), '?'));
-        $roundStmt = $db->prepare("SELECT participant_id, round_order, role, scenario, positions, participant_climax, partner_climax, partner_climax_location, cleanup_performed_by_partner_id, cleanup_method FROM encounter_rounds WHERE participant_id IN ($placeholders) ORDER BY round_order ASC, id ASC");
+        $roundStmt = $db->prepare("SELECT participant_id, round_order, role, scenario, positions, participant_climax, partner_climax, partner_climax_location, duration_minutes, satisfaction_rating, cleanup_performed_by_partner_id, cleanup_method FROM encounter_rounds WHERE participant_id IN ($placeholders) ORDER BY round_order ASC, id ASC");
         $roundStmt->execute($participantIds);
         $roundRows = $roundStmt->fetchAll(PDO::FETCH_ASSOC);
         $roundsByParticipant = [];
@@ -492,6 +548,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'participant_climax' => $row['participant_climax'] === null ? '' : ($row['participant_climax'] ? 'yes' : 'no'),
             'partner_climax' => $row['partner_climax'] === null ? '' : ($row['partner_climax'] ? 'yes' : 'no'),
             'partner_climax_location' => $row['partner_climax_location'] ?? '',
+            'duration_minutes' => $row['duration_minutes'] ?? '',
+            'satisfaction_rating' => $row['satisfaction_rating'] ?? '',
             'cleanup_partner_id' => $row['cleanup_performed_by_partner_id'],
             'cleanup_method' => $row['cleanup_method']
           ];
@@ -525,8 +583,9 @@ if (!empty($participantsData)) {
   <title><?= h($config['app_name']) ?></title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="../assets/css/style.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="icon" href="../assets/img/icons/shield.svg">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://tile.openstreetmap.org; img-src 'self' data: https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://tile.openstreetmap.org; img-src 'self' data: https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
 </head>
 <body>
 <nav class="navbar navbar-expand-lg bg-body-tertiary">
@@ -574,7 +633,15 @@ if ($action === 'new' || $action === 'edit') {
       </div>
       <div class="col-md-4">
         <label class="form-label">Location label</label>
-        <input name="location_label" class="form-control" placeholder="e.g., Home, Hotel, Outdoors" value="<?= h($enc['location_label']) ?>">
+        <input name="location_label" id="location-label" list="location-suggestions" class="form-control" placeholder="e.g., Home, Hotel, Outdoors" autocomplete="off" value="<?= h($enc['location_label']) ?>">
+        <datalist id="location-suggestions">
+          <?php foreach ($savedLocations as $loc): ?>
+            <?php if (!empty($loc['label'])): ?>
+              <option value="<?= h($loc['label']) ?>"></option>
+            <?php endif; ?>
+          <?php endforeach; ?>
+        </datalist>
+        <div class="form-hint">Start typing to reuse a saved location.</div>
       </div>
       <div class="col-md-4">
         <label class="form-label">Location type</label>
@@ -584,6 +651,20 @@ if ($action === 'new' || $action === 'edit') {
           <?php endforeach; ?>
         </select>
       </div>
+      <div class="col-md-4">
+        <label class="form-label">Saved locations</label>
+        <select id="saved-location-select" class="form-select">
+          <option value="">Select saved location…</option>
+          <?php foreach ($savedLocations as $loc): ?>
+            <?php if (!empty($loc['label'])): ?>
+              <option value="<?= h($loc['label']) ?>" data-lat="<?= h($loc['latitude']) ?>" data-lng="<?= h($loc['longitude']) ?>">
+                <?= h($loc['label']) ?><?php if ($loc['latitude'] !== null && $loc['longitude'] !== null): ?> (<?= round((float)$loc['latitude'], 4) ?>, <?= round((float)$loc['longitude'], 4) ?>)<?php endif; ?>
+              </option>
+            <?php endif; ?>
+          <?php endforeach; ?>
+        </select>
+        <div class="form-hint">Selecting fills coordinates automatically.</div>
+      </div>
       <div class="col-md-3">
         <label class="form-label">Latitude</label>
         <input name="latitude" class="form-control" value="<?= h($enc['latitude']) ?>">
@@ -591,6 +672,9 @@ if ($action === 'new' || $action === 'edit') {
       <div class="col-md-3">
         <label class="form-label">Longitude</label>
         <input name="longitude" class="form-control" value="<?= h($enc['longitude']) ?>">
+      </div>
+      <div class="col-12">
+        <div id="encounter-map" class="w-100" style="height:260px;" data-lat="<?= h($enc['latitude']) ?>" data-lng="<?= h($enc['longitude']) ?>"></div>
       </div>
       <div class="col-md-2">
         <label class="form-label">Physical (1–10)</label>
@@ -639,6 +723,12 @@ if ($action === 'new' || $action === 'edit') {
                       <?php if ($roundSummary['partner_climax'] === 'yes' && $roundSummary['partner_climax_location']): ?>
                         (<?= h($roundSummary['partner_climax_location']) ?>)
                       <?php endif; ?>
+                    <?php endif; ?>
+                    <?php if (!empty($roundSummary['duration_minutes'])): ?>
+                      • Duration: <?= (int)$roundSummary['duration_minutes'] ?> min
+                    <?php endif; ?>
+                    <?php if (!empty($roundSummary['satisfaction_rating'])): ?>
+                      • Satisfaction: <?= (int)$roundSummary['satisfaction_rating'] ?>/10
                     <?php endif; ?>
                     <?php if ($roundSummary['cleanup_partner'] || $roundSummary['cleanup_method']): ?>
                       • Cleanup: <?= h($roundSummary['cleanup_method'] ?? 'Not recorded') ?><?php if ($roundSummary['cleanup_partner']): ?> by <?= h($roundSummary['cleanup_partner']) ?><?php endif; ?>
@@ -744,6 +834,8 @@ if ($action === 'new' || $action === 'edit') {
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script type="application/json" id="saved-location-data"><?= json_encode($savedLocations) ?></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="assets/js/encounter.js"></script>
 <script src="assets/js/app.js"></script>
 </body>

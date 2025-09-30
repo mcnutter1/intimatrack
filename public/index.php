@@ -11,8 +11,9 @@ $config = require __DIR__ . '/../config/config.php';
   <title><?= h($config['app_name']) ?></title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="../assets/css/style.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="icon" href="../assets/img/icons/shield.svg">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://tile.openstreetmap.org; img-src 'self' data: https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://tile.openstreetmap.org; img-src 'self' data: https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
 </head>
 <body>
 <nav class="navbar navbar-expand-lg bg-body-tertiary">
@@ -51,9 +52,28 @@ $stats = [
 ];
 
 // Fetch latest 10
-$stmt = $db->prepare("SELECT e.*, 
-  (SELECT COUNT(*) FROM encounter_participants ep WHERE ep.encounter_id=e.id) as participant_count
-  FROM encounters e WHERE e.user_id=? ORDER BY occurred_at DESC LIMIT 10");
+$stmt = $db->prepare("SELECT 
+    e.id,
+    e.occurred_at,
+    e.location_label,
+    e.location_type,
+    e.latitude,
+    e.longitude,
+    e.physical_intensity,
+    e.emotional_intensity,
+    e.overall_rating,
+    COUNT(DISTINCT ep.id) AS participant_count,
+    COALESCE(SUM(er.duration_minutes), 0) AS total_duration,
+    AVG(er.satisfaction_rating) AS avg_satisfaction,
+    GROUP_CONCAT(DISTINCT p.name ORDER BY p.name SEPARATOR ', ') AS participant_names
+  FROM encounters e
+  LEFT JOIN encounter_participants ep ON ep.encounter_id = e.id
+  LEFT JOIN partners p ON p.id = ep.partner_id
+  LEFT JOIN encounter_rounds er ON er.participant_id = ep.id
+  WHERE e.user_id=?
+  GROUP BY e.id, e.occurred_at, e.location_label, e.location_type, e.latitude, e.longitude, e.physical_intensity, e.emotional_intensity, e.overall_rating
+  ORDER BY e.occurred_at DESC
+  LIMIT 10");
 $stmt->execute([$uid]);
 $recent = $stmt->fetchAll();
 
@@ -90,6 +110,7 @@ $markers = $stmt2->fetchAll();
       <?php else: ?>
         <ul class="list-group list-group-flush">
           <?php foreach ($recent as $r): ?>
+            <?php $avgSat = $r['avg_satisfaction'] !== null ? round((float)$r['avg_satisfaction'], 1) : null; ?>
             <li class="list-group-item d-flex justify-content-between align-items-start">
               <div>
                 <span class="timeline-dot"></span>
@@ -99,6 +120,9 @@ $markers = $stmt2->fetchAll();
                   Physical <?= (int)$r['physical_intensity'] ?>/10,
                   Emotional <?= (int)$r['emotional_intensity'] ?>/10,
                   Participants <?= (int)$r['participant_count'] ?>
+                  <?php if ((int)$r['total_duration']): ?>• Duration <?= (int)$r['total_duration'] ?> min<?php endif; ?>
+                  <?php if ($avgSat !== null): ?>• Satisfaction <?= $avgSat ?>/10<?php endif; ?>
+                  <?php if (!empty($r['participant_names'])): ?>• <?= h($r['participant_names']) ?><?php endif; ?>
                 </div>
               </div>
               <div>
@@ -112,23 +136,9 @@ $markers = $stmt2->fetchAll();
   </div>
 </div>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-const markers = <?= json_encode($markers) ?>;
-const map = L.map('map', {zoomControl:true});
-const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'&copy; OSM'}).addTo(map);
-
-if (markers.length) {
-  const group = L.featureGroup(markers.filter(m=>m.latitude && m.longitude).map(m => {
-    return L.marker([m.latitude, m.longitude]).bindPopup(`<strong>${m.location_label ?? 'Encounter'}</strong>`);
-  }));
-  group.addTo(map);
-  map.fitBounds(group.getBounds().pad(0.2));
-} else {
-  map.setView([0,0], 2);
-}
-</script>
+<script type="application/json" id="dashboard-map-data"><?= json_encode($markers) ?></script>
+<script src="../assets/js/dashboard.js"></script>
 
 </main>
 <footer class="app container text-center small">
