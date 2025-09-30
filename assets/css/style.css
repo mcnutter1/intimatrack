@@ -1,0 +1,18 @@
+
+:root{
+  --brand:#6b74ff;
+  --ink:#0f172a;
+  --muted:#64748b;
+  --bg:#f8fafc;
+  --card:#ffffff;
+}
+html, body{background:var(--bg); color:var(--ink);}
+.navbar-brand{font-weight:700; letter-spacing:.3px;}
+.card{border-radius:16px; border:1px solid #e2e8f0; box-shadow:0 3px 10px rgba(0,0,0,.04);}
+.btn-brand{background:var(--brand); border-color:var(--brand);}
+.badge-legend{display:inline-flex; align-items:center; gap:.35rem;}
+.timeline-dot{width:10px; height:10px; border-radius:50%; background:var(--brand); display:inline-block; margin-right:.5rem;}
+.small-muted{color:var(--muted); font-size:.9rem;}
+footer.app{margin:3rem 0; color:var(--muted);}
+.leaflet-container {border-radius: 12px; border:1px solid #e2e8f0;}
+.form-hint{font-size:.9rem; color:var(--muted);}
