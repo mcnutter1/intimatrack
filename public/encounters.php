@@ -294,7 +294,24 @@ $savedLocationsStmt = $db->prepare('SELECT label, latitude, longitude FROM user_
 $savedLocationsStmt->execute([$uid]);
 $savedLocations = $savedLocationsStmt->fetchAll(PDO::FETCH_ASSOC);
 if (!$savedLocations) {
-  $fallbackStmt = $db->prepare('SELECT DISTINCT COALESCE(NULLIF(location_label, \'\'), location_type) AS label, latitude, longitude FROM encounters WHERE user_id=? AND (location_label <> \'\' OR latitude IS NOT NULL OR longitude IS NOT NULL) ORDER BY occurred_at DESC LIMIT 25');
+  $fallbackStmt = $db->prepare("SELECT label, 
+      MAX(latitude) AS latitude,
+      MAX(longitude) AS longitude,
+      MAX(occurred_at) AS last_used
+    FROM (
+      SELECT 
+        COALESCE(NULLIF(location_label, ''), location_type) AS label,
+        latitude,
+        longitude,
+        occurred_at
+      FROM encounters
+      WHERE user_id = ?
+        AND (location_label <> '' OR latitude IS NOT NULL OR longitude IS NOT NULL)
+    ) AS recent_locations
+    WHERE label IS NOT NULL
+    GROUP BY label
+    ORDER BY last_used DESC
+    LIMIT 25");
   $fallbackStmt->execute([$uid]);
   $savedLocations = $fallbackStmt->fetchAll(PDO::FETCH_ASSOC);
 }
