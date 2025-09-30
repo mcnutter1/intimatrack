@@ -602,7 +602,7 @@ if (!empty($participantsData)) {
   <link href="../assets/css/style.css" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="icon" href="../assets/img/icons/shield.svg">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://tile.openstreetmap.org; img-src 'self' data: https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://tile.openstreetmap.org; img-src 'self' data: https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com; connect-src 'self' https://nominatim.openstreetmap.org; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
 </head>
 <body>
 <nav class="navbar navbar-expand-lg bg-body-tertiary">
@@ -648,7 +648,7 @@ if ($action === 'new' || $action === 'edit') {
         <label class="form-label">Date & time</label>
         <input name="occurred_at" type="datetime-local" class="form-control" value="<?= h($enc['occurred_at']) ?>" required>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-4 position-relative">
         <label class="form-label">Location label</label>
         <input name="location_label" id="location-label" list="location-suggestions" class="form-control" placeholder="e.g., Home, Hotel, Outdoors" autocomplete="off" value="<?= h($enc['location_label']) ?>">
         <datalist id="location-suggestions">
@@ -658,7 +658,8 @@ if ($action === 'new' || $action === 'edit') {
             <?php endif; ?>
           <?php endforeach; ?>
         </datalist>
-        <div class="form-hint">Start typing to reuse a saved location.</div>
+        <div id="location-search-results" class="location-search-results" hidden></div>
+        <div class="form-hint">Start typing to reuse a saved location or search the map.</div>
       </div>
       <div class="col-md-4">
         <label class="form-label">Location type</label>

@@ -6,12 +6,15 @@
   const summaryBody = document.getElementById('encounter-summary-body');
   const savedLocationDataEl = document.getElementById('saved-location-data');
   const locationLabelInput = document.getElementById('location-label');
+  const locationSearchResults = document.getElementById('location-search-results');
   const savedLocationSelect = document.getElementById('saved-location-select');
   const latitudeInput = document.querySelector('input[name="latitude"]');
   const longitudeInput = document.querySelector('input[name="longitude"]');
   const mapContainer = document.getElementById('encounter-map');
   let map = null;
   let marker = null;
+  let geocodeAbortController = null;
+  let searchDebounceTimer = null;
 
   let savedLocations = [];
   if (savedLocationDataEl) {
@@ -36,6 +39,13 @@
   const setCoordinateInputs = (lat, lng) => {
     if (latitudeInput) latitudeInput.value = lat !== undefined && lat !== null ? Number(lat).toFixed(6) : '';
     if (longitudeInput) longitudeInput.value = lng !== undefined && lng !== null ? Number(lng).toFixed(6) : '';
+  };
+
+  const hideSearchResults = () => {
+    if (locationSearchResults) {
+      locationSearchResults.innerHTML = '';
+      locationSearchResults.hidden = true;
+    }
   };
 
   const updateMarker = (lat, lng) => {
@@ -74,6 +84,7 @@
       const {lat, lng} = event.latlng;
       setCoordinateInputs(lat, lng);
       updateMarker(lat, lng);
+      hideSearchResults();
     });
   };
 
@@ -222,6 +233,63 @@
   renderSummary();
   initMap();
 
+  const renderSearchResults = items => {
+    if (!locationSearchResults) return;
+    if (!items.length) {
+      hideSearchResults();
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    items.forEach(item => {
+      const div = document.createElement('button');
+      div.type = 'button';
+      div.className = 'location-search-result';
+      div.textContent = item.display_name;
+      div.dataset.lat = item.lat;
+      div.dataset.lng = item.lon;
+      div.dataset.label = item.display_name;
+      fragment.appendChild(div);
+    });
+    locationSearchResults.innerHTML = '';
+    locationSearchResults.appendChild(fragment);
+    locationSearchResults.hidden = false;
+  };
+
+  const searchLocations = query => {
+    if (!query || query.trim().length < 3) {
+      hideSearchResults();
+      return;
+    }
+    if (geocodeAbortController) {
+      geocodeAbortController.abort();
+    }
+    geocodeAbortController = new AbortController();
+    const params = new URLSearchParams({
+      format: 'jsonv2',
+      addressdetails: '0',
+      limit: '6',
+      q: query.trim()
+    });
+    fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+      headers: {
+        'Accept': 'application/json'
+      },
+      signal: geocodeAbortController.signal
+    })
+      .then(response => {
+        if (!response.ok) throw new Error('Geocode request failed');
+        return response.json();
+      })
+      .then(results => {
+        renderSearchResults(Array.isArray(results) ? results : []);
+      })
+      .catch(err => {
+        if (err.name === 'AbortError') return;
+        console.warn('Geocode error', err);
+        hideSearchResults();
+      });
+  };
+
   if (savedLocationSelect) {
     savedLocationSelect.addEventListener('change', () => {
       const selectedOption = savedLocationSelect.options[savedLocationSelect.selectedIndex];
@@ -246,14 +314,44 @@
   }
 
   if (locationLabelInput) {
-    locationLabelInput.addEventListener('blur', () => {
-      const match = findSavedLocation(locationLabelInput.value);
-      if (match) {
-        if (match.latitude !== null && match.longitude !== null) {
-          setCoordinateInputs(match.latitude, match.longitude);
-          updateMarker(match.latitude, match.longitude);
-        }
+    locationLabelInput.addEventListener('input', () => {
+      const value = locationLabelInput.value;
+      if (searchDebounceTimer) {
+        clearTimeout(searchDebounceTimer);
       }
+      searchDebounceTimer = setTimeout(() => {
+        const saved = findSavedLocation(value);
+        if (saved && saved.latitude !== null && saved.longitude !== null) {
+          setCoordinateInputs(saved.latitude, saved.longitude);
+          updateMarker(saved.latitude, saved.longitude);
+          hideSearchResults();
+          return;
+        }
+        searchLocations(value);
+      }, 400);
+    });
+
+    locationLabelInput.addEventListener('blur', () => {
+      setTimeout(() => {
+        hideSearchResults();
+      }, 150);
+    });
+  }
+
+  if (locationSearchResults) {
+    locationSearchResults.addEventListener('mousedown', event => {
+      const target = event.target.closest('.location-search-result');
+      if (!target) return;
+      event.preventDefault();
+      const label = target.dataset.label || '';
+      const lat = parseCoord(target.dataset.lat);
+      const lng = parseCoord(target.dataset.lng);
+      if (locationLabelInput) locationLabelInput.value = label;
+      if (lat !== null && lng !== null) {
+        setCoordinateInputs(lat, lng);
+        updateMarker(lat, lng);
+      }
+      hideSearchResults();
     });
   }
 

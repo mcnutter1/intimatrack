@@ -168,21 +168,63 @@ $freq = $freq_by_day->fetchAll();
 <div class="row g-3 mb-3">
   <div class="col-12 col-lg-6">
     <div class="card p-3 h-100">
-      <h2 class="h6">Scenario breakdown</h2>
+      <h2 class="h6 mb-3">Scenario breakdown</h2>
       <?php if (!$scenarioStats): ?>
         <div class="small-muted">Log rounds to see scenario trends.</div>
       <?php else: ?>
-        <canvas id="chartScenario" height="200"></canvas>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead class="small-muted">
+              <tr>
+                <th>Scenario</th>
+                <th class="text-end">Rounds</th>
+                <th class="text-end">Avg satisfaction</th>
+                <th class="text-end">Avg duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($scenarioStats as $row): ?>
+                <tr>
+                  <td><?= h($scenarioLabels[$row['scenario']] ?? ucwords(str_replace('_',' ', $row['scenario']))) ?></td>
+                  <td class="text-end"><?= (int)$row['rounds'] ?></td>
+                  <td class="text-end"><?= $row['avg_satisfaction'] !== null ? number_format((float)$row['avg_satisfaction'], 1) : '—' ?></td>
+                  <td class="text-end"><?= $row['avg_duration'] !== null ? number_format((float)$row['avg_duration'], 1) . ' min' : '—' ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
       <?php endif; ?>
     </div>
   </div>
   <div class="col-12 col-lg-6">
     <div class="card p-3 h-100">
-      <h2 class="h6">Partner satisfaction</h2>
+      <h2 class="h6 mb-3">Partner satisfaction</h2>
       <?php if (!$partnerSatisfaction): ?>
         <div class="small-muted">Add rounds with partners to unlock this insight.</div>
       <?php else: ?>
-        <canvas id="chartPartnerSatisfaction" height="200"></canvas>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead class="small-muted">
+              <tr>
+                <th>Partner</th>
+                <th class="text-end">Rounds</th>
+                <th class="text-end">Avg satisfaction</th>
+                <th class="text-end">Total duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($partnerSatisfaction as $row): ?>
+                <tr>
+                  <td><?= h($row['name']) ?></td>
+                  <td class="text-end"><?= (int)$row['rounds'] ?></td>
+                  <td class="text-end"><?= $row['avg_satisfaction'] !== null ? number_format((float)$row['avg_satisfaction'], 1) . '/10' : '—' ?></td>
+                  <td class="text-end"><?= (int)$row['total_duration'] ?> min</td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
       <?php endif; ?>
     </div>
   </div>
@@ -190,47 +232,95 @@ $freq = $freq_by_day->fetchAll();
 
 <div class="row g-3">
   <div class="col-12 col-lg-6">
-    <div class="card p-3">
-      <h2 class="h6">Intensity by Partner</h2>
+    <div class="card p-3 h-100">
+      <h2 class="h6 mb-3">Intensity by partner</h2>
       <?php if (!$by_partner): ?>
         <div class="small-muted">No encounters logged yet.</div>
       <?php else: ?>
-        <canvas id="chartPartner" height="200"></canvas>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead class="small-muted">
+              <tr>
+                <th>Partner</th>
+                <th class="text-end">Physical</th>
+                <th class="text-end">Emotional</th>
+                <th class="text-end">Overall</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($by_partner as $row): ?>
+                <tr>
+                  <td><?= h($row['name']) ?></td>
+                  <td class="text-end"><?= number_format((float)$row['pavg'], 1) ?></td>
+                  <td class="text-end"><?= number_format((float)$row['eavg'], 1) ?></td>
+                  <td class="text-end"><?= number_format((float)$row['ravg'], 1) ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
       <?php endif; ?>
     </div>
   </div>
   <div class="col-12 col-lg-6">
-    <div class="card p-3">
-      <h2 class="h6">Top Locations</h2>
+    <div class="card p-3 h-100">
+      <h2 class="h6 mb-3">Top locations</h2>
       <?php if (!$by_location): ?>
-        <div class="small-muted">Log encounters with locations to populate this chart.</div>
+        <div class="small-muted">Log encounters with locations to populate this section.</div>
       <?php else: ?>
-        <canvas id="chartLocation" height="200"></canvas>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead class="small-muted">
+              <tr>
+                <th>Location</th>
+                <th class="text-end">Encounters</th>
+                <th class="text-end">Physical avg</th>
+                <th class="text-end">Emotional avg</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($by_location as $row): ?>
+                <tr>
+                  <td><?= h($row['label']) ?></td>
+                  <td class="text-end"><?= (int)$row['c'] ?></td>
+                  <td class="text-end"><?= number_format((float)$row['pavg'], 1) ?></td>
+                  <td class="text-end"><?= number_format((float)$row['eavg'], 1) ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
       <?php endif; ?>
     </div>
   </div>
   <div class="col-12">
-    <div class="card p-3">
-      <h2 class="h6">Timeline Frequency</h2>
+    <div class="card p-3 h-100">
+      <h2 class="h6 mb-3">Timeline frequency</h2>
       <?php if (!$freq): ?>
         <div class="small-muted">No encounters logged yet.</div>
       <?php else: ?>
-        <canvas id="chartFreq" height="200"></canvas>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead class="small-muted">
+              <tr>
+                <th>Date</th>
+                <th class="text-end">Encounters</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($freq as $row): ?>
+                <tr>
+                  <td><?= h(date('M j, Y', strtotime($row['d']))) ?></td>
+                  <td class="text-end"><?= (int)$row['c'] ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
       <?php endif; ?>
     </div>
   </div>
 </div>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script type="application/json" id="analytics-data"><?= json_encode([
-  'byPartner' => $by_partner,
-  'byLocation' => $by_location,
-  'frequency' => $freq,
-  'scenarioStats' => $scenarioStats,
-  'partnerSatisfaction' => $partnerSatisfaction,
-  'scenarioLabels' => $scenarioLabels
-]) ?></script>
-<script src="../assets/js/analytics.js"></script>
 
 </main>
 <footer class="app container text-center small">
