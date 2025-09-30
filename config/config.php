@@ -9,8 +9,8 @@ return [
     'host' => '127.0.0.1',
     'port' => 3306,
     'name' => 'intimatrack',
-    'user' => 'intimatrack_user',
-    'pass' => 'replace_me_strong_password'
+    'user' => 'intimatrack_app',
+    'pass' => 'replace-with-strong-password'
   ],
   // 32-byte hex key recommended. Generate with: `php -r "echo bin2hex(random_bytes(32));"`
   'encryption_key_hex' => '0000000000000000000000000000000000000000000000000000000000000000',
