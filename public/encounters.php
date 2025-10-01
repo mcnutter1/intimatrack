@@ -407,6 +407,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
   $latitude = $_POST['latitude'] !== '' ? (float)$_POST['latitude'] : null;
   $longitude = $_POST['longitude'] !== '' ? (float)$_POST['longitude'] : null;
+  $saveLocationRequested = ($_POST['save_location'] ?? '0') === '1';
+  $locationFriendlyInput = trim($_POST['location_friendly_label'] ?? '');
+  if ($saveLocationRequested && $locationFriendlyInput !== '') {
+    $location_label = $locationFriendlyInput;
+  }
   $physical = clamp_int($_POST['physical_intensity'] ?? 0, 0, 10);
   $emotional = clamp_int($_POST['emotional_intensity'] ?? 0, 0, 10);
   $rating = clamp_int($_POST['overall_rating'] ?? 0, 0, 5);
@@ -467,10 +472,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
       }
 
-      if ($location_label !== '') {
+      if ($saveLocationRequested && $location_label !== '' && $latitude !== null && $longitude !== null) {
         $upsertLocation = $db->prepare('INSERT INTO user_locations (user_id, label, latitude, longitude, times_used, last_used_at) VALUES (?,?,?,?,1,?)
           ON DUPLICATE KEY UPDATE latitude = VALUES(latitude), longitude = VALUES(longitude), times_used = times_used + 1, last_used_at = VALUES(last_used_at)');
-        $upsertLocation->execute([$uid, $location_label, $latitude, $longitude, $occurred_at]);
+        $labelToSave = $locationFriendlyInput !== '' ? $locationFriendlyInput : $location_label;
+        $upsertLocation->execute([$uid, $labelToSave, $latitude, $longitude, $occurred_at]);
       }
 
       $db->commit();
@@ -648,19 +654,29 @@ if ($action === 'new' || $action === 'edit') {
         <label class="form-label">Date & time</label>
         <input name="occurred_at" type="datetime-local" class="form-control" value="<?= h($enc['occurred_at']) ?>" required>
       </div>
-      <div class="col-md-4 position-relative">
-        <label class="form-label">Location label</label>
-        <input name="location_label" id="location-label" list="location-suggestions" class="form-control" placeholder="e.g., Home, Hotel, Outdoors" autocomplete="off" value="<?= h($enc['location_label']) ?>">
-        <datalist id="location-suggestions">
-          <?php foreach ($savedLocations as $loc): ?>
-            <?php if (!empty($loc['label'])): ?>
-              <option value="<?= h($loc['label']) ?>"></option>
-            <?php endif; ?>
-          <?php endforeach; ?>
-        </datalist>
-        <div id="location-search-results" class="location-search-results" hidden></div>
-        <div class="form-hint">Start typing to reuse a saved location or search the map.</div>
+      <div class="col-12">
+        <label class="form-label">Location</label>
+        <div class="location-search-wrapper" data-initial-label="<?= h($enc['location_label']) ?>">
+          <input name="location_label" id="location-label" list="location-suggestions" class="form-control" placeholder="Start typing an address, hotel, or saved location" autocomplete="off" value="<?= h($enc['location_label']) ?>">
+          <datalist id="location-suggestions">
+            <?php foreach ($savedLocations as $loc): ?>
+              <?php if (!empty($loc['label'])): ?>
+                <option value="<?= h($loc['label']) ?>"></option>
+              <?php endif; ?>
+            <?php endforeach; ?>
+          </datalist>
+          <div id="location-search-results" class="location-search-results" hidden></div>
+          <div id="active-location-preview" class="location-selected d-none">
+            <span class="location-selected-label" id="active-location-label"></span>
+            <button type="button" class="btn btn-link btn-sm p-0" id="change-location">Change</button>
+          </div>
+        </div>
+        <div class="form-hint">Use a saved location or search the map. Coordinates update automatically.</div>
       </div>
+      <input type="hidden" name="latitude" value="<?= h($enc['latitude']) ?>">
+      <input type="hidden" name="longitude" value="<?= h($enc['longitude']) ?>">
+      <input type="hidden" name="save_location" id="save-location-flag" value="0">
+      <input type="hidden" name="location_friendly_label" id="save-location-friendly" value="">
       <div class="col-md-4">
         <label class="form-label">Location type</label>
         <select name="location_type" class="form-select">
@@ -669,30 +685,33 @@ if ($action === 'new' || $action === 'edit') {
           <?php endforeach; ?>
         </select>
       </div>
-      <div class="col-md-4">
-        <label class="form-label">Saved locations</label>
-        <select id="saved-location-select" class="form-select">
-          <option value="">Select saved location…</option>
-          <?php foreach ($savedLocations as $loc): ?>
-            <?php if (!empty($loc['label'])): ?>
-              <option value="<?= h($loc['label']) ?>" data-lat="<?= h($loc['latitude']) ?>" data-lng="<?= h($loc['longitude']) ?>">
-                <?= h($loc['label']) ?><?php if ($loc['latitude'] !== null && $loc['longitude'] !== null): ?> (<?= round((float)$loc['latitude'], 4) ?>, <?= round((float)$loc['longitude'], 4) ?>)<?php endif; ?>
-              </option>
-            <?php endif; ?>
-          <?php endforeach; ?>
-        </select>
-        <div class="form-hint">Selecting fills coordinates automatically.</div>
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">Latitude</label>
-        <input name="latitude" class="form-control" value="<?= h($enc['latitude']) ?>">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">Longitude</label>
-        <input name="longitude" class="form-control" value="<?= h($enc['longitude']) ?>">
-      </div>
       <div class="col-12">
-        <div id="encounter-map" class="w-100" style="height:260px;" data-lat="<?= h($enc['latitude']) ?>" data-lng="<?= h($enc['longitude']) ?>"></div>
+        <div id="encounter-map" class="w-100 mt-3" style="height:260px;" data-lat="<?= h($enc['latitude']) ?>" data-lng="<?= h($enc['longitude']) ?>"></div>
+      </div>
+      <div class="modal fade" id="saveLocationModal" tabindex="-1" aria-labelledby="saveLocationModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="saveLocationModalLabel">Save location</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <p class="small-muted mb-3" id="modal-location-display"></p>
+              <div class="mb-3">
+                <label class="form-label" for="modal-friendly-label">Friendly name</label>
+                <input type="text" class="form-control" id="modal-friendly-label" placeholder="e.g., Downtown hotel">
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="modal-save-checkbox" checked>
+                <label class="form-check-label" for="modal-save-checkbox">Save this location for future use</label>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" id="modal-use-once">Use without saving</button>
+              <button type="button" class="btn btn-brand" id="modal-save-confirm">Save location</button>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="col-md-2">
         <label class="form-label">Physical (1–10)</label>

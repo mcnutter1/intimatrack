@@ -4,89 +4,6 @@
   const participantTemplate = document.getElementById('participant-template');
   const roundTemplate = document.getElementById('round-template');
   const summaryBody = document.getElementById('encounter-summary-body');
-  const savedLocationDataEl = document.getElementById('saved-location-data');
-  const locationLabelInput = document.getElementById('location-label');
-  const locationSearchResults = document.getElementById('location-search-results');
-  const savedLocationSelect = document.getElementById('saved-location-select');
-  const latitudeInput = document.querySelector('input[name="latitude"]');
-  const longitudeInput = document.querySelector('input[name="longitude"]');
-  const mapContainer = document.getElementById('encounter-map');
-  let map = null;
-  let marker = null;
-  let geocodeAbortController = null;
-  let searchDebounceTimer = null;
-
-  let savedLocations = [];
-  if (savedLocationDataEl) {
-    try {
-      savedLocations = JSON.parse(savedLocationDataEl.textContent || '[]');
-    } catch (err) {
-      savedLocations = [];
-    }
-  }
-
-  const findSavedLocation = label => {
-    if (!label) return null;
-    const needle = label.trim().toLowerCase();
-    return savedLocations.find(loc => (loc.label || '').toLowerCase() === needle) || null;
-  };
-
-  const parseCoord = value => {
-    const num = parseFloat(value);
-    return Number.isFinite(num) ? num : null;
-  };
-
-  const setCoordinateInputs = (lat, lng) => {
-    if (latitudeInput) latitudeInput.value = lat !== undefined && lat !== null ? Number(lat).toFixed(6) : '';
-    if (longitudeInput) longitudeInput.value = lng !== undefined && lng !== null ? Number(lng).toFixed(6) : '';
-  };
-
-  const hideSearchResults = () => {
-    if (locationSearchResults) {
-      locationSearchResults.innerHTML = '';
-      locationSearchResults.hidden = true;
-    }
-  };
-
-  const updateMarker = (lat, lng) => {
-    if (!map) return;
-    if (lat === null || lng === null) {
-      if (marker) {
-        map.removeLayer(marker);
-        marker = null;
-      }
-      return;
-    }
-    if (!marker) {
-      marker = L.marker([lat, lng]).addTo(map);
-    } else {
-      marker.setLatLng([lat, lng]);
-    }
-    map.setView([lat, lng], Math.max(map.getZoom(), 13));
-  };
-
-  const initMap = () => {
-    if (!mapContainer || typeof L === 'undefined') return;
-    const initialLat = parseCoord(mapContainer.dataset.lat);
-    const initialLng = parseCoord(mapContainer.dataset.lng);
-    const hasInitial = initialLat !== null && initialLng !== null;
-    map = L.map(mapContainer, {zoomControl: true});
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
-    map.setView(hasInitial ? [initialLat, initialLng] : [37.7749, -122.4194], hasInitial ? 13 : 3);
-    if (hasInitial) {
-      marker = L.marker([initialLat, initialLng]).addTo(map);
-    }
-
-    map.on('click', event => {
-      const {lat, lng} = event.latlng;
-      setCoordinateInputs(lat, lng);
-      updateMarker(lat, lng);
-      hideSearchResults();
-    });
-  };
 
   function updatePartnerClimaxVisibility(root=document) {
     root.querySelectorAll('.partner-climax-select').forEach(select => {
@@ -97,9 +14,7 @@
       } else {
         container.style.display = 'none';
         const locationSelect = container.querySelector('select');
-        if (locationSelect) {
-          locationSelect.value = '';
-        }
+        if (locationSelect) locationSelect.value = '';
       }
     });
   }
@@ -131,9 +46,7 @@
         if (role) details.push(role.options[role.selectedIndex]?.text || 'Role');
         if (scenario) details.push(scenario.options[scenario.selectedIndex]?.text || 'Scenario');
         if (positions) details.push('Positions: ' + positions);
-        if (participantClimax && participantClimax.value) {
-          details.push('You: ' + (participantClimax.value === 'yes' ? 'climaxed' : 'no climax'));
-        }
+        if (participantClimax && participantClimax.value) details.push('You: ' + (participantClimax.value === 'yes' ? 'climaxed' : 'no climax'));
         if (partnerClimax && partnerClimax.value) {
           let text = 'Partner: ' + (partnerClimax.value === 'yes' ? 'climaxed' : 'no climax');
           if (partnerClimax.value === 'yes' && partnerClimaxLocation && partnerClimaxLocation.value) {
@@ -141,24 +54,16 @@
           }
           details.push(text);
         }
-        if (durationInput && durationInput.value) {
-          details.push('Duration: ' + durationInput.value + ' min');
-        }
-        if (satisfactionInput && satisfactionInput.value) {
-          details.push('Satisfaction: ' + satisfactionInput.value + '/10');
-        }
+        if (durationInput && durationInput.value) details.push('Duration: ' + durationInput.value + ' min');
+        if (satisfactionInput && satisfactionInput.value) details.push('Satisfaction: ' + satisfactionInput.value + '/10');
         if (cleanupMethod && (cleanupMethod.value || (cleanupPartnerSelect && cleanupPartnerSelect.value))) {
           let cleanupText = 'Cleanup: ' + (cleanupMethod.options[cleanupMethod.selectedIndex]?.text || 'Not recorded');
-          if (cleanupPartnerSelect && cleanupPartnerSelect.value) {
-            cleanupText += ' by ' + cleanupPartnerSelect.options[cleanupPartnerSelect.selectedIndex]?.text;
-          }
+          if (cleanupPartnerSelect && cleanupPartnerSelect.value) cleanupText += ' by ' + cleanupPartnerSelect.options[cleanupPartnerSelect.selectedIndex]?.text;
           details.push(cleanupText);
         }
         roundsHtml += '<li>' + details.join(' • ') + '</li>';
       });
-      if (!roundsHtml) {
-        roundsHtml = '<li class="text-muted">Add at least one round.</li>';
-      }
+      if (!roundsHtml) roundsHtml = '<li class="text-muted">Add at least one round.</li>';
       pieces.push('<div class="mb-2"><strong>' + partnerName + '</strong><ul class="small mb-1">' + roundsHtml + '</ul></div>');
     });
     summaryBody.innerHTML = pieces.join('');
@@ -181,12 +86,10 @@
         renderSummary();
       });
     }
-    block.addEventListener('click', (event) => {
+    block.addEventListener('click', event => {
       if (event.target.classList.contains('round-remove')) {
         const rounds = block.querySelectorAll('.round-row');
-        if (rounds.length <= 1) {
-          return;
-        }
+        if (rounds.length <= 1) return;
         const row = event.target.closest('.round-row');
         if (row) {
           row.remove();
@@ -197,10 +100,8 @@
   }
 
   if (participantList) {
-    participantList.querySelectorAll('.participant-block').forEach(block => {
-      bindParticipant(block);
-    });
-    participantList.addEventListener('click', (event) => {
+    participantList.querySelectorAll('.participant-block').forEach(bindParticipant);
+    participantList.addEventListener('click', event => {
       if (event.target.classList.contains('participant-remove')) {
         const block = event.target.closest('.participant-block');
         if (!block) return;
@@ -229,9 +130,146 @@
     });
   }
 
-  updatePartnerClimaxVisibility(document);
   renderSummary();
-  initMap();
+
+  const savedLocationDataEl = document.getElementById('saved-location-data');
+  let savedLocations = [];
+  if (savedLocationDataEl) {
+    try {
+      savedLocations = JSON.parse(savedLocationDataEl.textContent || '[]');
+    } catch (err) {
+      savedLocations = [];
+    }
+  }
+
+  const locationWrapper = document.querySelector('.location-search-wrapper');
+  const locationLabelInput = document.getElementById('location-label');
+  const locationSearchResults = document.getElementById('location-search-results');
+  const activeLocationPreview = document.getElementById('active-location-preview');
+  const activeLocationLabelEl = document.getElementById('active-location-label');
+  const changeLocationBtn = document.getElementById('change-location');
+  const latitudeInput = document.querySelector('input[name="latitude"]');
+  const longitudeInput = document.querySelector('input[name="longitude"]');
+  const saveLocationFlagInput = document.getElementById('save-location-flag');
+  const friendlyHiddenInput = document.getElementById('save-location-friendly');
+  const mapContainer = document.getElementById('encounter-map');
+
+  const saveLocationModalEl = document.getElementById('saveLocationModal');
+  const modalDisplay = document.getElementById('modal-location-display');
+  const modalFriendlyInput = document.getElementById('modal-friendly-label');
+  const modalSaveCheckbox = document.getElementById('modal-save-checkbox');
+  const modalSaveBtn = document.getElementById('modal-save-confirm');
+  const modalUseBtn = document.getElementById('modal-use-once');
+  let saveLocationModal = null;
+  if (saveLocationModalEl && typeof bootstrap !== 'undefined') {
+    saveLocationModal = new bootstrap.Modal(saveLocationModalEl);
+  }
+
+  let map = null;
+  let marker = null;
+  let geocodeAbortController = null;
+  let searchDebounceTimer = null;
+  let pendingLocation = null;
+  let currentQuery = '';
+
+  const parseCoord = value => {
+    const num = parseFloat(value);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const setCoordinateInputs = (lat, lng) => {
+    if (latitudeInput) latitudeInput.value = lat !== undefined && lat !== null ? Number(lat).toFixed(6) : '';
+    if (longitudeInput) longitudeInput.value = lng !== undefined && lng !== null ? Number(lng).toFixed(6) : '';
+  };
+
+  const updateMarker = (lat, lng) => {
+    if (!map) return;
+    if (lat === null || lng === null) {
+      if (marker) {
+        map.removeLayer(marker);
+        marker = null;
+      }
+      return;
+    }
+    if (!marker) {
+      marker = L.marker([lat, lng]).addTo(map);
+    } else {
+      marker.setLatLng([lat, lng]);
+    }
+    map.setView([lat, lng], Math.max(map.getZoom(), 13));
+  };
+
+  const initMap = () => {
+    if (!mapContainer || typeof L === 'undefined') return;
+    const initialLat = parseCoord(mapContainer.dataset.lat);
+    const initialLng = parseCoord(mapContainer.dataset.lng);
+    const hasInitial = initialLat !== null && initialLng !== null;
+    map = L.map(mapContainer, {zoomControl: true});
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    map.setView(hasInitial ? [initialLat, initialLng] : [37.7749, -122.4194], hasInitial ? 13 : 3);
+    if (hasInitial) marker = L.marker([initialLat, initialLng]).addTo(map);
+
+    map.on('click', event => {
+      const {lat, lng} = event.latlng;
+      setCoordinateInputs(lat, lng);
+      updateMarker(lat, lng);
+      setSaveState(0, '');
+      showActiveLocationPreview({label: locationLabelInput?.value || 'Pinned location', isSaved: false});
+      hideSearchResults();
+    });
+  };
+
+  const hideSearchResults = () => {
+    if (locationSearchResults) {
+      locationSearchResults.innerHTML = '';
+      locationSearchResults.hidden = true;
+    }
+  };
+
+  const setSaveState = (flag, friendlyLabel) => {
+    if (saveLocationFlagInput) saveLocationFlagInput.value = flag ? '1' : '0';
+    if (friendlyHiddenInput) friendlyHiddenInput.value = friendlyLabel ? friendlyLabel : '';
+  };
+
+  const showActiveLocationPreview = ({label, isSaved}) => {
+    if (!locationLabelInput || !activeLocationPreview || !activeLocationLabelEl) return;
+    locationLabelInput.classList.add('d-none');
+    activeLocationPreview.classList.remove('d-none');
+    activeLocationPreview.dataset.saved = isSaved ? '1' : '0';
+    activeLocationLabelEl.textContent = label;
+  };
+
+  const resetLocationInput = () => {
+    if (!locationLabelInput || !activeLocationPreview) return;
+    activeLocationPreview.classList.add('d-none');
+    locationLabelInput.classList.remove('d-none');
+    locationLabelInput.focus();
+    setSaveState(0, '');
+  };
+
+  const findSavedLocation = label => {
+    if (!label) return null;
+    const needle = label.trim().toLowerCase();
+    return savedLocations.find(loc => (loc.label || '').toLowerCase() === needle) || null;
+  };
+
+  const filterSavedMatches = query => {
+    if (!query) return [];
+    const needle = query.trim().toLowerCase();
+    return savedLocations
+      .filter(loc => loc.label && loc.label.toLowerCase().includes(needle))
+      .slice(0, 6)
+      .map(loc => ({
+        type: 'saved',
+        display: loc.label,
+        label: loc.label,
+        lat: loc.latitude !== null ? parseFloat(loc.latitude) : null,
+        lng: loc.longitude !== null ? parseFloat(loc.longitude) : null
+      }));
+  };
 
   const renderSearchResults = items => {
     if (!locationSearchResults) return;
@@ -241,39 +279,54 @@
     }
     const fragment = document.createDocumentFragment();
     items.forEach(item => {
-      const div = document.createElement('button');
-      div.type = 'button';
-      div.className = 'location-search-result';
-      div.textContent = item.display_name;
-      div.dataset.lat = item.lat;
-      div.dataset.lng = item.lon;
-      div.dataset.label = item.display_name;
-      fragment.appendChild(div);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'location-search-result';
+      button.textContent = item.display;
+      button.dataset.type = item.type;
+      button.dataset.label = item.label;
+      if (item.lat !== null) button.dataset.lat = item.lat;
+      if (item.lng !== null) button.dataset.lng = item.lng;
+      fragment.appendChild(button);
     });
     locationSearchResults.innerHTML = '';
     locationSearchResults.appendChild(fragment);
     locationSearchResults.hidden = false;
   };
 
-  const searchLocations = query => {
-    if (!query || query.trim().length < 3) {
+  const updateSearchResults = (query, remoteResults) => {
+    if (!locationSearchResults) return;
+    const trimmed = (query || '').trim();
+    if (!trimmed) {
       hideSearchResults();
       return;
     }
-    if (geocodeAbortController) {
-      geocodeAbortController.abort();
+    const savedMatches = filterSavedMatches(trimmed);
+    let items = [...savedMatches];
+    if (remoteResults && Array.isArray(remoteResults)) {
+      remoteResults.forEach(res => {
+        const display = res.display_name;
+        const lat = parseFloat(res.lat);
+        const lng = parseFloat(res.lon);
+        if (!display) return;
+        if (items.some(item => item.display.toLowerCase() === display.toLowerCase())) return;
+        items.push({ type: 'remote', display, label: display, lat, lng });
+      });
     }
+    renderSearchResults(items);
+  };
+
+  const searchLocations = query => {
+    const trimmed = (query || '').trim();
+    if (!trimmed || trimmed.length < 3) {
+      updateSearchResults(query, []);
+      return;
+    }
+    if (geocodeAbortController) geocodeAbortController.abort();
     geocodeAbortController = new AbortController();
-    const params = new URLSearchParams({
-      format: 'jsonv2',
-      addressdetails: '0',
-      limit: '6',
-      q: query.trim()
-    });
+    const params = new URLSearchParams({ format: 'jsonv2', addressdetails: '0', limit: '6', q: trimmed });
     fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-      headers: {
-        'Accept': 'application/json'
-      },
+      headers: { 'Accept': 'application/json' },
       signal: geocodeAbortController.signal
     })
       .then(response => {
@@ -281,60 +334,101 @@
         return response.json();
       })
       .then(results => {
-        renderSearchResults(Array.isArray(results) ? results : []);
+        if (trimmed.toLowerCase() === currentQuery.toLowerCase()) {
+          updateSearchResults(trimmed, Array.isArray(results) ? results : []);
+        }
       })
       .catch(err => {
         if (err.name === 'AbortError') return;
         console.warn('Geocode error', err);
-        hideSearchResults();
       });
   };
 
-  if (savedLocationSelect) {
-    savedLocationSelect.addEventListener('change', () => {
-      const selectedOption = savedLocationSelect.options[savedLocationSelect.selectedIndex];
-      if (!selectedOption || !selectedOption.value) {
-        return;
+  const applySavedLocation = record => {
+    if (!record) return;
+    const lat = record.lat !== null ? record.lat : parseCoord(latitudeInput?.value);
+    const lng = record.lng !== null ? record.lng : parseCoord(longitudeInput?.value);
+    if (locationLabelInput) locationLabelInput.value = record.label;
+    setSaveState(0, '');
+    setCoordinateInputs(lat, lng);
+    updateMarker(lat, lng);
+    showActiveLocationPreview({label: record.label, isSaved: true});
+    hideSearchResults();
+  };
+
+  const applyRemoteLocation = ({label, lat, lng}, friendlyLabel, shouldSave) => {
+    const finalLabel = friendlyLabel && friendlyLabel.trim() ? friendlyLabel.trim() : label;
+    if (locationLabelInput) locationLabelInput.value = finalLabel;
+    setSaveState(shouldSave ? 1 : 0, shouldSave ? finalLabel : '');
+    setCoordinateInputs(lat, lng);
+    updateMarker(lat, lng);
+    showActiveLocationPreview({label: finalLabel, isSaved: shouldSave});
+    hideSearchResults();
+    if (shouldSave) {
+      const existing = findSavedLocation(finalLabel);
+      if (!existing) {
+        savedLocations.push({ label: finalLabel, latitude: lat, longitude: lng });
       }
-      const record = findSavedLocation(selectedOption.value) || {
-        label: selectedOption.value,
-        latitude: selectedOption.dataset.lat ? parseFloat(selectedOption.dataset.lat) : null,
-        longitude: selectedOption.dataset.lng ? parseFloat(selectedOption.dataset.lng) : null
-      };
-      if (locationLabelInput && record.label) {
-        locationLabelInput.value = record.label;
-      }
-      const lat = record.latitude !== null ? parseFloat(record.latitude) : parseCoord(latitudeInput?.value);
-      const lng = record.longitude !== null ? parseFloat(record.longitude) : parseCoord(longitudeInput?.value);
-      if (lat !== null && lng !== null) {
-        setCoordinateInputs(lat, lng);
-        updateMarker(lat, lng);
-      }
+    }
+  };
+
+  const handleRemoteSelection = item => {
+    pendingLocation = item;
+    if (!saveLocationModal) {
+      applyRemoteLocation(item, item.label, false);
+      pendingLocation = null;
+      return;
+    }
+    modalDisplay.textContent = item.label;
+    modalFriendlyInput.value = item.label;
+    modalSaveCheckbox.checked = true;
+    saveLocationModal.show();
+  };
+
+  if (saveLocationModalEl) {
+    saveLocationModalEl.addEventListener('hidden.bs.modal', () => {
+      pendingLocation = null;
+    });
+  }
+
+  if (modalSaveBtn) {
+    modalSaveBtn.addEventListener('click', () => {
+      if (!pendingLocation) return;
+      const friendly = modalFriendlyInput.value.trim() || pendingLocation.label;
+      const shouldSave = modalSaveCheckbox.checked;
+      applyRemoteLocation(pendingLocation, friendly, shouldSave);
+      saveLocationModal.hide();
+      pendingLocation = null;
+    });
+  }
+
+  if (modalUseBtn) {
+    modalUseBtn.addEventListener('click', () => {
+      if (!pendingLocation) return;
+      const friendly = modalFriendlyInput.value.trim() || pendingLocation.label;
+      applyRemoteLocation(pendingLocation, friendly, false);
+      if (saveLocationModal) saveLocationModal.hide();
+      pendingLocation = null;
+    });
+  }
+
+  if (changeLocationBtn) {
+    changeLocationBtn.addEventListener('click', () => {
+      resetLocationInput();
+      hideSearchResults();
     });
   }
 
   if (locationLabelInput) {
     locationLabelInput.addEventListener('input', () => {
       const value = locationLabelInput.value;
-      if (searchDebounceTimer) {
-        clearTimeout(searchDebounceTimer);
-      }
-      searchDebounceTimer = setTimeout(() => {
-        const saved = findSavedLocation(value);
-        if (saved && saved.latitude !== null && saved.longitude !== null) {
-          setCoordinateInputs(saved.latitude, saved.longitude);
-          updateMarker(saved.latitude, saved.longitude);
-          hideSearchResults();
-          return;
-        }
-        searchLocations(value);
-      }, 400);
+      currentQuery = value || '';
+      updateSearchResults(value, []);
+      if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => searchLocations(currentQuery), 350);
     });
-
     locationLabelInput.addEventListener('blur', () => {
-      setTimeout(() => {
-        hideSearchResults();
-      }, 150);
+      setTimeout(() => hideSearchResults(), 150);
     });
   }
 
@@ -343,15 +437,16 @@
       const target = event.target.closest('.location-search-result');
       if (!target) return;
       event.preventDefault();
+      const type = target.dataset.type;
       const label = target.dataset.label || '';
       const lat = parseCoord(target.dataset.lat);
       const lng = parseCoord(target.dataset.lng);
-      if (locationLabelInput) locationLabelInput.value = label;
-      if (lat !== null && lng !== null) {
-        setCoordinateInputs(lat, lng);
-        updateMarker(lat, lng);
+      if (!label) return;
+      if (type === 'saved') {
+        applySavedLocation({label, lat, lng});
+      } else {
+        handleRemoteSelection({label, lat, lng});
       }
-      hideSearchResults();
     });
   }
 
@@ -361,11 +456,24 @@
     input.addEventListener('change', () => {
       const lat = parseCoord(latitudeInput?.value);
       const lng = parseCoord(longitudeInput?.value);
-      if (lat !== null && lng !== null) {
-        updateMarker(lat, lng);
-      } else {
-        updateMarker(null, null);
-      }
+      if (lat !== null && lng !== null) updateMarker(lat, lng);
+      else updateMarker(null, null);
     });
   });
+
+  initMap();
+
+  if (locationWrapper && locationLabelInput && activeLocationPreview && activeLocationLabelEl) {
+    const initialLabel = locationWrapper.dataset.initialLabel || locationLabelInput.value;
+    const lat = parseCoord(latitudeInput?.value);
+    const lng = parseCoord(longitudeInput?.value);
+    if (initialLabel) {
+      const saved = findSavedLocation(initialLabel);
+      if (saved && (lat === null || lng === null)) {
+        setCoordinateInputs(saved.latitude, saved.longitude);
+        updateMarker(saved.latitude, saved.longitude);
+      }
+      showActiveLocationPreview({label: initialLabel, isSaved: !!saved});
+    }
+  }
 })();
